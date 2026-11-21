@@ -1,0 +1,13 @@
+.git
+node_modules
+.env
+.env.*
+credentials
+data
+legacy
+test-results
+playwright-report
+*.log
+*.pem
+*.key
+service-account*.json

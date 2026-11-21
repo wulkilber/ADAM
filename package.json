@@ -1,0 +1,28 @@
+{
+  "name": "adam-ocorrencias",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ADAM — Ocorrências Estudantis IFAM, Node.js e Google Sheets",
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
+    "demo": "node server/index.js --demo",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.js",
+    "sheets:check": "node --env-file-if-exists=.env scripts/sheets-check.js",
+    "test:browser": "playwright test",
+    "format": "prettier --write public shared server scripts test docs README.md"
+  },
+  "dependencies": {
+    "google-auth-library": "11.3.4",
+    "pdfkit": "0.21.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "prettier": "3.10.1"
+  }
+}
