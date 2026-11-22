@@ -12,6 +12,9 @@ import { SerialExecutor } from "./coordination.js";
 
 const mutations = [
   "registrarOcorrencia",
+  "editarOcorrencia",
+  "desativarAluno",
+  "confirmarLeituraDepe",
   "cadastrarAluno",
   "atualizarAluno",
   "registrarEncaminhamento",
@@ -30,23 +33,39 @@ const portalReadRights = {
   gerarPdfEncaminhamento: "report",
   listarContas: "manageAccounts",
   alterarConta: "manageAccounts",
-  confirmarLeituraDepe: "confirmReading",
 };
 function depeView(db) {
   const Encaminhamentos = db.Encaminhamentos.filter((r) =>
     ["ENCAMINHADO", "CONCLUIDO"].includes(r.status),
   );
-  const studentIds = new Set(Encaminhamentos.map((r) => r.alunoId));
-  const Alunos = db.Alunos.filter((a) => studentIds.has(a.id)).map(
-    ({ id, nome, matricula, curso, turma }) => ({
-      id,
-      nome,
-      matricula,
-      curso,
-      turma,
-    }),
-  );
-  return { ...db, Encaminhamentos, Alunos, Ocorrencias: [], Usuarios: [] };
+  const authors = new Set(db.Ocorrencias.map((o) => o.assistenteId));
+  return {
+    ...db,
+    Encaminhamentos,
+    Usuarios: db.Usuarios.filter((u) => authors.has(u.id)),
+  };
+}
+function pendingTotals(db, timeZone) {
+  const date = new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const students = new Map(db.Alunos.map((a) => [a.id, a]));
+  const totals = new Map();
+  for (const referral of db.Encaminhamentos) {
+    if (referral.status !== "PENDENTE") continue;
+    const created = new Date(referral.criadoEm || "");
+    const dia = Number.isNaN(created.getTime()) ? "" : date.format(created);
+    const { curso = "", turma = "" } = students.get(referral.alunoId) || {};
+    const anoLetivo = Number(referral.anoLetivo);
+    const key = JSON.stringify([anoLetivo, dia, curso, turma]);
+    if (!totals.has(key))
+      totals.set(key, { anoLetivo, dia, curso, turma, total: 0 });
+    totals.get(key).total++;
+  }
+  return [...totals.values()];
 }
 const hash = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -235,9 +254,21 @@ export class AdamService {
           I.allow(user, portalReadRights[name], I.PORTAL_RIGHTS);
         else if (name !== "obterSessao")
           fault("NOT_FOUND", "Operação não encontrada.", 404);
-        const scoped =
-          user.perfil === "DEP" && name !== "obterSessao" ? depeView(db) : db;
-        return this.readOperation(snapshot, scoped, user, name, input);
+        const isDepe = user.perfil === "DEP" && name !== "obterSessao";
+        const scoped = isDepe ? depeView(db) : db;
+        const data = await this.readOperation(
+          snapshot,
+          scoped,
+          user,
+          name,
+          input,
+        );
+        if (isDepe && name === "carregarDados")
+          data.PendenciasPorRecorte = pendingTotals(
+            db,
+            settings(db).fusoHorario,
+          );
+        return data;
       }
       if (mutations.includes(name))
         return this.mutate(snapshot, db, user, name, input);
@@ -318,6 +349,7 @@ export class AdamService {
       policy: settings(db).politicaAposLimite,
       rights,
     });
+    if (!plan.writes.length) return plan.data;
     const op = {
       id: plan.id,
       usuarioId: user.id,

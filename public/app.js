@@ -142,8 +142,10 @@ const can = (r) => permissions.includes(r),
       timeStyle: "short",
       timeZone: config.fusoHorario,
     }).format(new Date(v)),
+  statusLabel = (s) =>
+    passwordLogin && s === "CONCLUIDO" ? "Encerrado" : labels[s] || esc(s),
   badge = (s) =>
-    `<span class="badge ${s === "PENDENTE" ? "warn" : s === "CONCLUIDO" ? "green" : ""}">${s === "CONCLUIDO" ? "✓ " : s === "PENDENTE" ? "◷ " : ""}${labels[s] || esc(s)}</span>`,
+    `<span class="badge ${s === "PENDENTE" ? "warn" : s === "CONCLUIDO" ? "green" : ""}">${s === "CONCLUIDO" ? "✓ " : s === "PENDENTE" ? "◷ " : ""}${statusLabel(s)}</span>`,
   tags = (o) =>
     JSON.parse(o.irregularidadesJson)
       .map(
@@ -167,12 +169,13 @@ function toast(t) {
   $("#toast").style.display = "block";
   setTimeout(() => ($("#toast").style.display = "none"), 4500);
 }
-function navigate(p, id = "") {
+let navigation = 0;
+async function navigate(p, id = "") {
   if (passwordLogin && user.perfil === "ADMIN" && p !== "admin") return;
   if (
     passwordLogin &&
     user.perfil === "DEP" &&
-    !["depe", "document"].includes(p)
+    !["depe", "document", "students", "profile", "reports"].includes(p)
   )
     return;
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
@@ -185,6 +188,23 @@ function navigate(p, id = "") {
   classroom = "";
   countFilter = "";
   pendingKey = null;
+  const attempt = ++navigation;
+  if (
+    passwordLogin &&
+    ["students", "profile", "register", "depe", "reports"].includes(p)
+  ) {
+    $("#content").innerHTML = '<p role="status">Atualizando dados…</p>';
+    try {
+      const data = await rpc("carregarDados");
+      if (attempt !== navigation) return;
+      db = data;
+    } catch (error) {
+      if (attempt !== navigation) return;
+      $("#content").innerHTML = '<p class="error" role="alert"></p>';
+      $("#content .error").textContent = error.message;
+      return;
+    }
+  }
   render();
   $("#content h1")?.focus({ preventScroll: true });
   window.scrollTo(0, 0);
@@ -281,7 +301,7 @@ function enterPortal() {
     selected = "";
     query = course = classroom = countFilter = from = to = typeFilter = "";
     pendingKey = null;
-    statusFilter = "";
+    statusFilter = user.perfil === "DEP" ? "ENCAMINHADO" : "";
   }
   render();
 }
@@ -343,7 +363,7 @@ function render() {
       accountOnly
         ? p === "admin"
         : depeOnly
-          ? p === "depe"
+          ? ["depe", "students", "reports"].includes(p)
           : p !== "register" || can("register"),
     )
     .map(([p, label]) => {
@@ -404,6 +424,7 @@ function render() {
       dirty = false;
       year = +e.target.value;
       reportPage = 1;
+      if ($("#content [role=status]")) return;
       render();
     };
   $("#logout").onclick = async () => {
@@ -414,6 +435,7 @@ function render() {
         headers: { "X-CSRF-Token": csrfToken },
       });
       if (!response.ok) throw new Error("Não foi possível sair.");
+      navigation++;
       dirty = false;
       user = null;
       db = null;
@@ -563,7 +585,7 @@ function students(only = false) {
     (a) => matches(a) && (!countFilter || annual(a.id).length === +countFilter),
   );
   const body = list.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno / matrícula</th><th>Curso</th><th>Turma</th><th>Ocorrências em ${year}</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${person(a)}</td><td data-label="Curso">${esc(a.curso)}</td><td data-label="Turma">${esc(a.turma)}</td><td data-label="Ocorrências"><span class="badge ${annual(a.id).length >= 3 ? "red" : annual(a.id).length === 2 ? "warn" : "green"}">${annual(a.id).length} de 3</span></td><td><button class="text-link" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
+    ? `<table class="responsive-table"><thead><tr><th>Aluno / matrícula</th><th>Curso</th><th>Turma</th><th>Ocorrências em ${year}</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${person(a)}${a.ativo ? "" : '<span class="badge warn">Inativo</span>'}</td><td data-label="Curso">${esc(a.curso)}</td><td data-label="Turma">${esc(a.turma)}</td><td data-label="Ocorrências"><span class="badge ${annual(a.id).length >= 3 ? "red" : annual(a.id).length === 2 ? "warn" : "green"}">${annual(a.id).length} de 3</span></td><td><button class="text-link" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">${db.Alunos.length ? "Nenhum aluno encontrado. Tente outros filtros." : "Ainda não há alunos cadastrados."}</div>`;
   if (only) {
     $("#student-results").innerHTML = body;
@@ -628,8 +650,38 @@ function studentModal(a) {
     },
   );
 }
-function historyHTML(os) {
-  return `<div class="timeline">${os.map((o) => `<article><time>${dt(o.dataHoraAbordagem)}</time><h3>${occurrenceDescription(JSON.parse(o.irregularidadesJson), o.tituloPersonalizado, " · ")}</h3><p>${esc(o.observacao || "Sem observação.")}</p><p>Registrado por ${esc(o.assistenteNome || db.Usuarios.find((u) => u.id === o.assistenteId)?.nome || "Usuário autorizado")}</p></article>`).join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"}</div>`;
+function historyHTML(os, editable = false) {
+  return `<div class="timeline">${
+    os
+      .map(
+        (o) => `<article>
+    <time>${dt(o.dataHoraAbordagem)}</time>
+    <h3>${occurrenceDescription(JSON.parse(o.irregularidadesJson), o.tituloPersonalizado, " · ")}</h3>
+    <p>${esc(o.observacao || "Sem observação.")}</p>
+    <p>Registrado por ${esc(o.assistenteNome || db.Usuarios.find((u) => u.id === o.assistenteId)?.nome || "Usuário autorizado")}</p>
+    ${o.editadoEm ? `<p>Última correção em ${dt(o.editadoEm)}.${o.corrigidaAposEnvio ? " Corrigida após o envio. O relatório enviado preserva a versão original." : ""}</p>` : ""}
+    ${editable ? `<button class="text-link" data-edit-occurrence="${esc(o.id)}">Editar ocorrência</button>` : ""}
+  </article>`,
+      )
+      .join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"
+  }</div>`;
+}
+function referralHistory(referrals) {
+  if (!referrals.length)
+    return "<p>Nenhum encaminhamento disponível para este ano letivo.</p>";
+  return referrals
+    .map(
+      (r) => `<article class="student-referral">
+    <div>${badge(r.status)} <time>${dt(r.encaminhadoEm || r.criadoEm)}</time></div>
+    ${r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)}</p>` : ""}
+    ${r.concluidoEm ? `<p>Caso encerrado em ${dt(r.concluidoEm)}</p>` : ""}
+    <div class="actions">
+      <button data-referral="${esc(r.id)}">Ver encaminhamento</button>
+      <button data-document="${esc(r.id)}">Ver relatório e PDF</button>
+    </div>
+  </article>`,
+    )
+    .join("");
 }
 function profile() {
   const a = student(selected);
@@ -638,20 +690,141 @@ function profile() {
     return;
   }
   const os = annual(a.id).sort((a, b) =>
-      b.dataHoraAbordagem.localeCompare(a.dataHoraAbordagem),
-    ),
-    ref = db.Encaminhamentos.find(
-      (e) => e.alunoId === a.id && +e.anoLetivo === year,
-    );
+    b.dataHoraAbordagem.localeCompare(a.dataHoraAbordagem),
+  );
+  const referrals = db.Encaminhamentos.filter(
+    (e) => e.alunoId === a.id && +e.anoLetivo === year,
+  ).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   $("#content").innerHTML =
     heading(
       "HISTÓRICO DO ALUNO",
       esc(a.nome),
-      `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)}`,
+      `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)} · ${a.ativo ? "Ativo" : "Inativo"}`,
       `<button onclick="navigate('students')">Voltar para alunos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Histórico de ${year}</h2><span class="badge">${os.length} registros</span></div><div class="panel-body">${historyHTML(os)}</div></section><section><div class="panel"><div class="panel-body"><h2>Acompanhamento anual</h2><div class="steps">${[1, 2, 3].map((n) => `<span class="${os.length >= n ? "on" : ""}"></span>`).join("")}</div><p>${os.length} de 3 ocorrências no ano letivo</p>${ref ? `<div class="note">Limite atingido neste ano letivo.<br>Encaminhamento ao DEPE: ${badge(ref.status)}</div><button style="width:100%;margin-top:18px" onclick="navigate('depe','${ref.id}')">Ver encaminhamento</button>` : can("register") ? `<button class="primary" style="width:100%;margin-top:18px" onclick="navigate('register','${a.id}')">Registrar ocorrência</button>` : ""}${can("student") ? '<button id="edit-student" class="quiet" style="margin-top:10px">Editar cadastro</button>' : ""}</div></div><p>A mudança do ano mantém todo o histórico anterior. Concluir o atendimento não zera a contagem.</p></section></div>`;
-  if ($("#edit-student")) $("#edit-student").onclick = () => studentModal(a);
+    `<div class="grid">
+      <section class="panel"><div class="panel-head"><h2>Histórico de ${year}</h2><span class="badge">${os.length} registros</span></div><div class="panel-body">${historyHTML(os, can("editOccurrence"))}</div></section>
+      <div>
+        <section class="panel"><div class="panel-head"><h2>Cadastro</h2></div><div class="panel-body">
+          <p>${os.length} de 3 ocorrências no ano letivo.</p>
+          <div class="actions">
+            ${a.ativo && os.length < 3 && can("register") ? '<button id="register-for-student" class="primary">Registrar ocorrência</button>' : ""}
+            ${can("student") ? '<button id="edit-student">Editar cadastro</button>' : ""}
+            ${a.ativo && can("deactivateStudent") ? '<button id="deactivate-student">Desativar aluno</button>' : ""}
+          </div>
+        </div></section>
+        <section class="panel"><div class="panel-head"><h2>Encaminhamentos em ${year}</h2></div><div class="panel-body">${referralHistory(referrals)}</div></section>
+      </div>
+    </div>`;
+  $("#edit-student")?.addEventListener("click", () => studentModal(a));
+  $("#deactivate-student")?.addEventListener("click", () =>
+    deactivateStudent(a),
+  );
+  $("#register-for-student")?.addEventListener("click", () =>
+    navigate("register", a.id),
+  );
+  document.querySelectorAll("[data-edit-occurrence]").forEach((b) => {
+    b.onclick = () =>
+      editOccurrence(os.find((o) => o.id === b.dataset.editOccurrence));
+  });
+  document.querySelectorAll("[data-referral]").forEach((b) => {
+    b.onclick = () => navigate("depe", b.dataset.referral);
+  });
+  document.querySelectorAll("[data-document]").forEach((b) => {
+    b.onclick = () => navigate("document", b.dataset.document);
+  });
+}
+function mutationModal(html, mutate, message) {
+  modal(html, async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector(".primary");
+    button.disabled = true;
+    try {
+      await mutate(event.currentTarget);
+      await service.refresh();
+      $("#modal").close();
+      render();
+      toast(message);
+    } catch (error) {
+      $("#modal-error").innerHTML =
+        `<div class="error">${esc(error.message)}</div>`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+function modalActions(label) {
+  return `<div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">${label}</button></div>`;
+}
+function deactivateStudent(a) {
+  const key = uid();
+  mutationModal(
+    `<h2>Desativar aluno</h2><p>Confirme a desativação de <strong>${esc(a.nome)}</strong>. O histórico fica disponível para consulta.</p>
+      <form>${modalActions("Confirmar desativação")}</form>`,
+    () =>
+      service.mutate("desativarAluno", {
+        alunoId: a.id,
+        versaoEsperada: a.versao,
+        chaveIdempotencia: key,
+      }),
+    "Aluno desativado.",
+  );
+}
+function occurrenceFields(occurrence) {
+  const checked = occurrence ? JSON.parse(occurrence.irregularidadesJson) : [];
+  const custom = checked.includes("PERSONALIZADA");
+  const suffix = occurrence ? "-edit" : "";
+  return `<fieldset class="occurrence-types"><legend>Tipo de ocorrência</legend><div class="choices">${availableTypes()
+    .map(
+      (t) =>
+        `<label class="choice"><input type="checkbox" name="types" value="${t}" ${checked.includes(t) ? "checked" : ""}><span><strong>${labels[t]}</strong><br><small>${t === "PERSONALIZADA" ? "Informar outro tipo" : t === "ATRASO" ? "Chegada após o horário" : "Fora do padrão"}</small></span></label>`,
+    )
+    .join(
+      "",
+    )}</div><p>Selecione os tipos aplicáveis. Cada abordagem conta como uma ocorrência.</p></fieldset>
+  ${customOccurrences ? `<label class="field" data-custom-title-field ${custom ? "" : "hidden"}>Título da ocorrência<input name="customTitle" maxlength="${IFAM.CUSTOM_TITLE_MAX}" ${custom ? "required" : "disabled"} value="${esc(occurrence?.tituloPersonalizado)}"></label>` : ""}
+  <label class="field">Observação <span style="font-weight:400">Opcional</span><textarea id="observation${suffix}" name="observation" maxlength="2000" placeholder="Descreva a abordagem de forma objetiva e respeitosa.">${esc(occurrence?.observacao)}</textarea></label>`;
+}
+function bindOccurrenceFields(form) {
+  const choices = [...form.querySelectorAll("[name=types]")];
+  const custom = choices.find((choice) => choice.value === "PERSONALIZADA");
+  const title = form.elements.customTitle;
+  if (custom)
+    form.onchange = (event) => {
+      const choice = event.target;
+      if (!choices.includes(choice)) return;
+      if (choice.checked) {
+        for (const other of choices)
+          if (other !== choice && (choice === custom || other === custom))
+            other.checked = false;
+      }
+      form.querySelector("[data-custom-title-field]").hidden = title.disabled =
+        !custom.checked;
+      title.required = custom.checked;
+    };
+  return () => ({
+    irregularidades: choices
+      .filter((choice) => choice.checked)
+      .map((choice) => choice.value),
+    ...(title && !title.disabled && { tituloPersonalizado: title.value }),
+    observacao: form.elements.observation.value,
+  });
+}
+function editOccurrence(occurrence) {
+  const key = uid();
+  mutationModal(
+    `<h2>Editar ocorrência</h2><p>Abordagem de ${dt(occurrence.dataHoraAbordagem)}</p>
+    <form>${occurrenceFields(occurrence)}${modalActions("Salvar correção")}</form>`,
+    () =>
+      service.mutate("editarOcorrencia", {
+        ...fields(),
+        id: occurrence.id,
+        versaoEsperada: occurrence.versao ?? 1,
+        chaveIdempotencia: key,
+      }),
+    "Ocorrência atualizada.",
+  );
+  const fields = bindOccurrenceFields($("#modal form"));
 }
 function register() {
   if (!can("register")) {
@@ -674,14 +847,7 @@ function register() {
       )
       .join(
         "",
-      )}</select></label><div id="student-summary"></div><fieldset class="occurrence-types"><legend>2. Tipo de ocorrência</legend><div class="choices">${availableTypes()
-      .map(
-        (t) =>
-          `<label class="choice"><input type="checkbox" name="types" value="${t}"><span><strong>${labels[t]}</strong><br><small>${t === "PERSONALIZADA" ? "Informar outro tipo" : t === "ATRASO" ? "Chegada após o horário" : "Fora do padrão"}</small></span></label>`,
-      )
-      .join(
-        "",
-      )}</div><p>Selecione os tipos aplicáveis. Cada abordagem conta como uma ocorrência.</p></fieldset>${customOccurrences ? `<label class="field" id="custom-title-field" hidden>Título da ocorrência<input id="custom-title" maxlength="${IFAM.CUSTOM_TITLE_MAX}" disabled></label>` : ""}<label class="field">3. Observação <span style="font-weight:400">Opcional</span><textarea id="observation" maxlength="2000" placeholder="Descreva a abordagem de forma objetiva e respeitosa."></textarea></label><div class="note">Responsável: <strong>${esc(user.nome)}</strong><br>Data e horário serão registrados na confirmação, no fuso ${esc(config.fusoHorario)}.</div><div id="form-error" role="alert"></div><div class="actions"><button type="button" onclick="navigate('home')">Cancelar</button><button class="primary" ${inactive ? "disabled" : ""}>Revisar registro ${icon("arrow")}</button></div></form></div></section>`;
+      )}</select></label><div id="student-summary"></div>${occurrenceFields()}<div class="note">Responsável: <strong>${esc(user.nome)}</strong><br>Data e horário serão registrados na confirmação, no fuso ${esc(config.fusoHorario)}.</div><div id="form-error" role="alert"></div><div class="actions"><button type="button" onclick="navigate('home')">Cancelar</button><button class="primary" ${inactive ? "disabled" : ""}>Revisar registro ${icon("arrow")}</button></div></form></div></section>`;
   const summary = () => {
     const a = student($("#student-select").value);
     $("#student-summary").innerHTML = a
@@ -709,33 +875,14 @@ function register() {
         .join("");
     summary();
   };
-  const title = $("#custom-title");
-  if (title) {
-    const choices = [...document.querySelectorAll("[name=types]")];
-    const custom = choices.find((choice) => choice.value === "PERSONALIZADA");
-    $("#occurrence-form").onchange = (event) => {
-      const choice = event.target;
-      if (!choices.includes(choice)) return;
-      if (choice.checked) {
-        for (const other of choices)
-          if (other !== choice && (choice === custom || other === custom))
-            other.checked = false;
-      }
-      $("#custom-title-field").hidden = title.disabled = !custom.checked;
-      title.required = custom.checked;
-    };
-  }
+  const fields = bindOccurrenceFields($("#occurrence-form"));
   $("#occurrence-form").oninput = () => (dirty = true);
   $("#occurrence-form").onsubmit = (e) => {
     e.preventDefault();
     let p = {
       alunoId: $("#student-select").value,
       anoLetivo: year,
-      irregularidades: [
-        ...document.querySelectorAll("[name=types]:checked"),
-      ].map((x) => x.value),
-      ...(title && !title.disabled && { tituloPersonalizado: title.value }),
-      observacao: $("#observation").value,
+      ...fields(),
       chaveIdempotencia: pendingKey || uid(),
     };
     try {
@@ -806,15 +953,12 @@ function depe(only = false) {
         ? "Fila do DEPE"
         : "Encaminhamentos ao DEPE",
       `Casos no ano letivo de ${year}.`,
-      passwordLogin
-        ? `<div class="actions"><button id="refresh-referrals">Atualizar</button>${depeOnly && can("createStudent") ? '<button class="primary" id="add-student">Cadastrar aluno</button>' : ""}</div>`
-        : "",
+      passwordLogin ? `<button id="refresh-referrals">Atualizar</button>` : "",
     ) +
-    `<div class="tabs">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
+    `<div class="tabs">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${depeOnly && s === "ENCAMINHADO" ? "Abertos" : depeOnly && s === "CONCLUIDO" ? "Encerrados" : labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
     `<section class="panel" id="ref-results">${list}</section>${depeOnly ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEPE.</div>'}`;
   filterEvents(depe);
-  if ($("#add-student")) $("#add-student").onclick = () => studentModal();
   if ($("#refresh-referrals"))
     $("#refresh-referrals").onclick = async () => {
       try {
@@ -840,6 +984,8 @@ function referralDetail() {
     return;
   }
   const snap = JSON.parse(r.snapshotJson);
+  const confirmReading =
+    can("confirmReading") && r.status !== "PENDENTE" && !r.lidoEm;
   $("#content").innerHTML =
     heading(
       "ENCAMINHAMENTO AO DEPE",
@@ -847,15 +993,33 @@ function referralDetail() {
       `${esc(snap.aluno.matricula)} · ${esc(snap.aluno.turma)} · Ano letivo ${r.anoLetivo}`,
       `<button onclick="navigate('depe')">Voltar para encaminhamentos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O relatório enviado preserva a versão registrada no momento do envio.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${confirmReading ? '<button id="confirm-reading">Confirmar leitura</button>' : ""}
+    ${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? `<button class="primary" id="transition">${passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</button>` : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>${passwordLogin ? "Encerrado" : "Concluído"} em ${dt(r.concluidoEm)}${r.concluidoPorNome ? ` por ${esc(r.concluidoPorNome)}` : ""}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
   if ($("#transition")) $("#transition").onclick = () => transition(r);
+  $("#confirm-reading")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await service.mutate("confirmarLeituraDepe", {
+        id: r.id,
+        chaveIdempotencia: uid(),
+      });
+      await service.refresh();
+      render();
+      toast("Leitura confirmada.");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
   if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
 }
 function transition(r) {
   const send = r.status === "PENDENTE",
     key = uid();
   modal(
-    `<h2>${send ? "Registrar encaminhamento" : "Concluir atendimento"}</h2><p>${send ? "Confirme que o encaminhamento foi realizado." : "Confirme a conclusão do atendimento no DEPE."} A data e o responsável serão registrados agora.</p><form><label class="field">Observação <textarea name="observacao" maxlength="2000"></textarea></label><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Confirmar ${send ? "encaminhamento" : "conclusão"}</button></div></form>`,
+    `<h2>${send ? "Registrar encaminhamento" : passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</h2><p>${send ? "Confirme que o encaminhamento foi realizado." : "Confirme a conclusão do atendimento no DEPE."} A data e o responsável serão registrados agora.</p><form><label class="field">Observação <textarea name="observacao" maxlength="2000"></textarea></label><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Confirmar ${send ? "encaminhamento" : passwordLogin ? "encerramento" : "conclusão"}</button></div></form>`,
     async (e) => {
       e.preventDefault();
       const b = e.target.querySelector(".primary");
@@ -888,12 +1052,14 @@ function docHTML(r, snap) {
 }
 async function documentView() {
   const r = db.Encaminhamentos.find((e) => e.id === selected);
+  const attempt = navigation;
   if (!r) return;
   $("#content").innerHTML = "<p>Preparando documento…</p>";
   try {
     const data = live
       ? await rpc("obterDadosDocumento", { encaminhamentoId: r.id })
       : { snapshot: JSON.parse(r.snapshotJson) };
+    if (attempt !== navigation) return;
     $("#content").innerHTML =
       heading(
         "DOCUMENTO",
@@ -906,6 +1072,7 @@ async function documentView() {
     $("#print").onclick = () => window.print();
     if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
   } catch (e) {
+    if (attempt !== navigation) return;
     $("#content").innerHTML = `<div class="error">${esc(e.message)}</div>`;
   }
 }
@@ -1045,14 +1212,29 @@ function reports() {
     ENCAMINHADO: "Encaminhados",
     CONCLUIDO: "Concluídos",
   };
+  const pending = periodInvalid
+    ? 0
+    : (db.PendenciasPorRecorte || [])
+        .filter(
+          (r) =>
+            r.anoLetivo === year &&
+            (!course || r.curso === course) &&
+            (!classroom || r.turma === classroom) &&
+            (!(from || to) || r.dia) &&
+            (!from || r.dia >= from) &&
+            (!to || r.dia <= to),
+        )
+        .reduce((count, r) => count + r.total, 0);
   const byState = Object.entries(states).map(([state, label]) => [
     label,
-    refs.filter((r) => r.status === state).length,
+    refs.filter((r) => r.status === state).length +
+      (state === "PENDENTE" ? pending : 0),
   ]);
+  const referralTotal = refs.length + pending;
   const totals = [
     [os.length, "Abordagens", "Uma por registro", "depe"],
     [ids.size, "Alunos envolvidos", "Alunos distintos no período", "students"],
-    [refs.length, "Encaminhamentos", "Pela data de criação do caso", "arrow"],
+    [referralTotal, "Encaminhamentos", "Pela data de criação do caso", "arrow"],
     [
       byState[2][1],
       "Concluídos",
@@ -1066,7 +1248,7 @@ function reports() {
   reportPage = Math.min(reportPage, pageCount);
   const start = (reportPage - 1) * pageSize;
   const hasFilters = from || to || course || classroom || typeFilter;
-  const exportable = !periodInvalid && (os.length || refs.length);
+  const exportable = !periodInvalid && (os.length || referralTotal);
   $("#content").innerHTML =
     heading(
       "ANÁLISE DO ANO LETIVO",
@@ -1100,10 +1282,14 @@ function reports() {
       <section class="panel"><div class="panel-head"><h2>Situação dos encaminhamentos</h2></div>
         <div class="panel-body">${reportBreakdown(byState)}<p>Considera ano, período, curso e turma. O filtro de tipo vale para as abordagens.</p></div></section>
     </div>
-    <section class="panel"><div class="panel-head"><h2>Registros do período</h2><span class="badge">${os.length} registros</span></div>
+    ${
+      user.perfil === "DEP" && passwordLogin
+        ? ""
+        : `<section class="panel"><div class="panel-head"><h2>Registros do período</h2><span class="badge">${os.length} registros</span></div>
       ${occurrenceTable(os.slice(start, start + pageSize))}
       ${pageCount > 1 ? `<div class="report-pagination"><button id="report-prev" ${reportPage === 1 ? "disabled" : ""}>Anterior</button><span aria-live="polite">Página ${reportPage} de ${pageCount}</span><button id="report-next" ${reportPage === pageCount ? "disabled" : ""}>Próxima</button></div>` : ""}
-    </section>`);
+    </section>`
+    }`);
 
   const applyFilters = () => {
     const focused = document.activeElement.id;

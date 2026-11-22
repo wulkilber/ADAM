@@ -125,6 +125,9 @@ test("Campus Tefé: tema nos três perfis e ocorrência personalizada até o DEP
     await signIn("depe", "Fila do DEPE");
     await expect(
       page.getByRole("button", { name: "Cadastrar aluno" }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator("nav").getByRole("button", { name: "Alunos", exact: true }),
     ).toBeVisible();
     await page
       .getByRole("row", { name: /Ana Clara Oliveira/ })

@@ -1172,3 +1172,18 @@ dialog::backdrop {
     color: #18251b;
   }
 }
+
+.student-referral + .student-referral {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.student-referral time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.student-referral .actions {
+  justify-content: flex-start;
+}
