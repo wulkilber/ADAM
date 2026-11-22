@@ -64,6 +64,7 @@ let db,
   from = "",
   to = "",
   typeFilter = "",
+  reportPage = 1,
   dirty = false,
   pendingKey = null;
 let live = true,
@@ -168,6 +169,7 @@ function navigate(p, id = "") {
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
   dirty = false;
   page = p;
+  if (p === "reports") reportPage = 1;
   selected = id;
   query = "";
   course = "";
@@ -330,6 +332,7 @@ function render() {
       }
       dirty = false;
       year = +e.target.value;
+      reportPage = 1;
       render();
     };
   $("#logout").onclick = async () => {
@@ -384,13 +387,13 @@ function occurrenceTable(list) {
     ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Tipo de ocorrência</th><th>Data</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table>`
     : '<div class="empty">Nenhuma ocorrência neste período.</div>';
 }
-function filteredOccurrences() {
+function filteredOccurrences(day = (date) => date.slice(0, 10)) {
   return db.Ocorrencias.filter(
     (o) =>
       Number(o.anoLetivo) === year &&
       o.status === "ATIVA" &&
-      (!from || o.dataHoraAbordagem.slice(0, 10) >= from) &&
-      (!to || o.dataHoraAbordagem.slice(0, 10) <= to) &&
+      (!from || day(o.dataHoraAbordagem) >= from) &&
+      (!to || day(o.dataHoraAbordagem) <= to) &&
       (!course || student(o.alunoId).curso === course) &&
       (!classroom || student(o.alunoId).turma === classroom) &&
       (!typeFilter || JSON.parse(o.irregularidadesJson).includes(typeFilter)),
@@ -842,68 +845,233 @@ function dateEvents(fn) {
     fn();
   };
 }
+function reportBreakdown(items) {
+  const max = Math.max(1, ...items.map(([, count]) => count));
+  return `<ul class="report-breakdown">${items
+    .map(
+      ([label, count]) =>
+        `<li><div><span>${esc(label)}</span><strong>${count}</strong></div><div class="report-track" aria-hidden="true"><span style="--share:${(count / max) * 100}%"></span></div></li>`,
+    )
+    .join("")}</ul>`;
+}
+
+const reportMonths = new Intl.DateTimeFormat("pt-BR", {
+  month: "short",
+  timeZone: "UTC",
+});
+function monthLabel(month) {
+  const date = new Date(month + "-01T12:00:00Z");
+  return `${reportMonths.format(date).replace(".", "")}/${month.slice(2, 4)}`;
+}
+function monthlyChart(months) {
+  const max = Math.max(1, ...months.map(([, count]) => count));
+  return `<ol class="report-timeline">${months
+    .map(
+      ([month, count]) =>
+        `<li><div class="report-column"><strong>${count}</strong><span aria-hidden="true" style="--share:${(count / max) * 100}%"></span></div><span>${esc(monthLabel(month))}</span></li>`,
+    )
+    .join("")}</ol>`;
+}
+function downloadReport(rows) {
+  const cell = (value) => {
+    const raw = String(value);
+    const literal =
+      typeof value === "string" && /^[\s\uFEFF]*[=+@-]/.test(raw)
+        ? "'" + raw
+        : raw;
+    return '"' + literal.replace(/"/g, '""') + '"';
+  };
+  const csv = rows.map((row) => row.map(cell).join(";")).join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `adam-relatorio-${year}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function reports() {
-  const os = filteredOccurrences(),
-    ids = new Set(os.map((o) => o.alunoId)),
-    refs = db.Encaminhamentos.filter(
-      (e) =>
-        +e.anoLetivo === year &&
-        (!course || student(e.alunoId).curso === course) &&
-        (!classroom || student(e.alunoId).turma === classroom) &&
-        (!from || e.criadoEm.slice(0, 10) >= from) &&
-        (!to || e.criadoEm.slice(0, 10) <= to),
-    );
+  const periodInvalid = from && to && from > to;
+  const dayFormat = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: config.fusoHorario,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const day = (date) => dayFormat.format(new Date(date));
+  const os = periodInvalid ? [] : filteredOccurrences(day);
+  const refs = periodInvalid
+    ? []
+    : db.Encaminhamentos.filter((e) => {
+        const cadastro = student(e.alunoId);
+        return (
+          +e.anoLetivo === year &&
+          (!course || cadastro?.curso === course) &&
+          (!classroom || cadastro?.turma === classroom) &&
+          (!from || day(e.criadoEm) >= from) &&
+          (!to || day(e.criadoEm) <= to)
+        );
+      });
+
+  const ids = new Set(),
+    courses = new Map(),
+    monthCounts = new Map();
+  const types = new Map(IFAM.TYPES.map((type) => [type, 0]));
+  for (let number = 1; number <= 12; number++) {
+    const month = `${year}-${String(number).padStart(2, "0")}`;
+    if (
+      (!from || month >= from.slice(0, 7)) &&
+      (!to || month <= to.slice(0, 7))
+    )
+      monthCounts.set(month, 0);
+  }
+  for (const occurrence of os) {
+    ids.add(occurrence.alunoId);
+    const month = day(occurrence.dataHoraAbordagem).slice(0, 7);
+    monthCounts.set(month, (monthCounts.get(month) ?? 0) + 1);
+    const name = student(occurrence.alunoId)?.curso || "Curso não informado";
+    courses.set(name, (courses.get(name) ?? 0) + 1);
+    for (const type of new Set(JSON.parse(occurrence.irregularidadesJson))) {
+      if (types.has(type)) types.set(type, types.get(type) + 1);
+    }
+  }
+  const months = [...monthCounts].sort(([a], [b]) => a.localeCompare(b));
+  const byCourse = [...courses].sort(
+    ([a, av], [b, bv]) => bv - av || a.localeCompare(b, "pt-BR"),
+  );
+  const byType = [...types].map(([type, count]) => [
+    type === "ATRASO" ? "Atrasos" : labels[type] + " fora do padrão",
+    count,
+  ]);
+  const states = {
+    PENDENTE: "Aguardando envio",
+    ENCAMINHADO: "Encaminhados",
+    CONCLUIDO: "Concluídos",
+  };
+  const byState = Object.entries(states).map(([state, label]) => [
+    label,
+    refs.filter((r) => r.status === state).length,
+  ]);
+  const totals = [
+    [os.length, "Abordagens", "Uma por registro", "dep"],
+    [ids.size, "Alunos envolvidos", "Alunos distintos no período", "students"],
+    [refs.length, "Encaminhamentos", "Pela data de criação do caso", "arrow"],
+    [
+      byState[2][1],
+      "Concluídos",
+      "Entre os encaminhamentos filtrados",
+      "check",
+    ],
+  ];
+
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(os.length / pageSize));
+  reportPage = Math.min(reportPage, pageCount);
+  const start = (reportPage - 1) * pageSize;
+  const hasFilters = from || to || course || classroom || typeFilter;
+  const exportable = !periodInvalid && (os.length || refs.length);
   $("#content").innerHTML =
     heading(
       "ANÁLISE DO ANO LETIVO",
       "Relatórios",
-      `Indicadores de ${year} calculados a partir dos registros válidos.`,
+      `Ocorrências e encaminhamentos de ${year}.`,
+      `<button id="export-report" ${exportable ? "" : "disabled"}>Baixar resumo CSV</button>`,
     ) +
-    `<div class="filterbar"><label class="field" style="margin:0">De<input type="date" id="from" value="${from}"></label><label class="field" style="margin:0">Até<input type="date" id="to" value="${to}"></label><select id="course" aria-label="Curso">${options("curso", course)}</select><select id="classroom" aria-label="Turma">${options("turma", classroom)}</select><select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${IFAM.TYPES.map((t) => `<option value="${t}" ${typeFilter === t ? "selected" : ""}>${labels[t]}</option>`).join("")}</select></div>` +
-    stats([
-      [os.length, "Abordagens", "No período e filtros selecionados", "dep"],
-      [
-        ids.size,
-        "Alunos envolvidos",
-        "Contagem de alunos distintos",
-        "students",
-      ],
-      [
-        refs.length,
-        "Encaminhamentos",
-        "Por data de criação e turma/curso",
-        "arrow",
-      ],
-      [
-        refs.filter((e) => e.status === "CONCLUIDO").length,
-        "Atendimentos concluídos",
-        "Entre os encaminhamentos filtrados",
-        "check",
-      ],
-    ]) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Irregularidades registradas</h2></div><div class="panel-body">${IFAM.TYPES.map(
-      (t) => {
-        const n = os.filter((o) =>
-          JSON.parse(o.irregularidadesJson).includes(t),
-        ).length;
-        return `<div style="display:flex;justify-content:space-between;font-size:13px"><span>${t === "ATRASO" ? "Atrasos" : labels[t] + " fora do padrão"}</span><strong>${n}</strong></div><div class="bar"><span style="width:${os.length ? (n / os.length) * 100 : 0}%"></span></div>`;
-      },
-    ).join(
-      "",
-    )}<p>Uma ocorrência pode conter mais de uma irregularidade. A soma por tipo pode superar o total de abordagens.</p></div></section><section class="panel"><div class="panel-head"><h2>Situação dos encaminhamentos</h2></div><div class="panel-body">${["PENDENTE", "ENCAMINHADO", "CONCLUIDO"].map((s) => `<p style="display:flex;justify-content:space-between;margin:15px 0">${badge(s)}<strong>${refs.filter((e) => e.status === s).length}</strong></p>`).join("")}<p>O filtro de irregularidade aplica-se às abordagens. Encaminhamentos consideram ano, período, curso e turma.</p></div></section></div><section class="panel"><div class="panel-head"><h2>Registros do período</h2><span class="badge">${os.length} registros</span></div>${occurrenceTable(os)}</section>`;
-  dateEvents(reports);
+    `<div class="filterbar report-filters">
+      <label class="field">De<input type="date" id="from" value="${from}"></label>
+      <label class="field">Até<input type="date" id="to" value="${to}"></label>
+      <select id="course" aria-label="Curso">${options("curso", course)}</select>
+      <select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>
+      <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${IFAM.TYPES.map((t) => `<option value="${t}" ${typeFilter === t ? "selected" : ""}>${labels[t]}</option>`).join("")}</select>
+      <button id="clear-report-filters" ${hasFilters ? "" : "disabled"}>Limpar filtros</button>
+    </div>` +
+    (periodInvalid
+      ? '<p class="error" role="alert">A data inicial deve ser anterior ou igual à data final.</p>'
+      : stats(totals) +
+        `<section class="panel"><div class="panel-head"><div><h2>Abordagens por mês</h2><p>Datas no fuso ${esc(config.fusoHorario)}</p></div></div>
+      <div class="panel-body">${os.length ? monthlyChart(months) : '<p class="empty">Nenhuma abordagem no recorte selecionado.</p>'}</div></section>
+    <div class="report-grid">
+      <section class="panel"><div class="panel-head"><h2>Irregularidades por tipo</h2></div>
+        <div class="panel-body">${reportBreakdown(byType)}<p>Uma abordagem pode contar em mais de um tipo.</p></div></section>
+      <section class="panel"><div class="panel-head"><h2>Abordagens por curso</h2></div>
+        <div class="panel-body">${byCourse.length ? reportBreakdown(byCourse) : '<p class="empty">Sem abordagens para comparar.</p>'}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Situação dos encaminhamentos</h2></div>
+        <div class="panel-body">${reportBreakdown(byState)}<p>Considera ano, período, curso e turma. O filtro de tipo vale para as abordagens.</p></div></section>
+    </div>
+    <section class="panel"><div class="panel-head"><h2>Registros do período</h2><span class="badge">${os.length} registros</span></div>
+      ${occurrenceTable(os.slice(start, start + pageSize))}
+      ${pageCount > 1 ? `<div class="report-pagination"><button id="report-prev" ${reportPage === 1 ? "disabled" : ""}>Anterior</button><span aria-live="polite">Página ${reportPage} de ${pageCount}</span><button id="report-next" ${reportPage === pageCount ? "disabled" : ""}>Próxima</button></div>` : ""}
+    </section>`);
+
+  const applyFilters = () => {
+    const focused = document.activeElement.id;
+    reportPage = 1;
+    reports();
+    const control = document.getElementById(focused);
+    if (control) (control.disabled ? $("#from") : control).focus();
+  };
+  dateEvents(applyFilters);
   $("#course").onchange = (e) => {
     course = e.target.value;
-    reports();
+    applyFilters();
   };
   $("#classroom").onchange = (e) => {
     classroom = e.target.value;
-    reports();
+    applyFilters();
   };
   $("#type").onchange = (e) => {
     typeFilter = e.target.value;
-    reports();
+    applyFilters();
   };
+  $("#clear-report-filters").onclick = () => {
+    from = to = course = classroom = typeFilter = "";
+    applyFilters();
+  };
+  for (const [selector, step] of [
+    ["#report-prev", -1],
+    ["#report-next", 1],
+  ]) {
+    const button = $(selector);
+    if (button)
+      button.onclick = () => {
+        reportPage += step;
+        reports();
+        ($(selector).disabled
+          ? $(step === 1 ? "#report-prev" : "#report-next")
+          : $(selector)
+        ).focus();
+      };
+  }
+  if (exportable)
+    $("#export-report").onclick = () =>
+      downloadReport([
+        ["Seção", "Indicador", "Valor"],
+        ["Filtros", "Ano letivo", year],
+        ["Filtros", "Data inicial", from || "Sem limite"],
+        ["Filtros", "Data final", to || "Sem limite"],
+        ["Filtros", "Curso", course || "Todos"],
+        ["Filtros", "Turma", classroom || "Todas"],
+        ["Filtros", "Tipo de ocorrência", labels[typeFilter] || "Todos"],
+        ...totals.map(([count, label]) => ["Resumo", label, count]),
+        ...months.map(([month, count]) => ["Abordagens por mês", month, count]),
+        ...byType.map(([label, count]) => [
+          "Irregularidades por tipo",
+          label,
+          count,
+        ]),
+        ...byCourse.map(([label, count]) => [
+          "Abordagens por curso",
+          label,
+          count,
+        ]),
+        ...byState.map(([label, count]) => [
+          "Situação dos encaminhamentos",
+          label,
+          count,
+        ]),
+      ]);
 }
 function settings() {
   $("#content").innerHTML =
