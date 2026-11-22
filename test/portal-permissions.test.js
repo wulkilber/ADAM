@@ -176,13 +176,58 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     await api(depe, action, {}, 403);
 
   let occurrence;
-  for (let i = 0; i < 3; i++)
+  const custom = {
+    alunoId: enrolled.id,
+    anoLetivo: assist.data.configuracoes.anoLetivoAtivo,
+    irregularidades: ["PERSONALIZADA"],
+    chaveIdempotencia: "oc-custom",
+  };
+  await api(assist, "registrarOcorrencia", custom, 400);
+  for (const tituloPersonalizado of ["   ", "x".repeat(101)])
+    await api(
+      assist,
+      "registrarOcorrencia",
+      { ...custom, tituloPersonalizado },
+      400,
+    );
+  await api(
+    admin,
+    "registrarOcorrencia",
+    { ...custom, tituloPersonalizado: "Laboratório" },
+    403,
+  );
+  await api(
+    depe,
+    "registrarOcorrencia",
+    { ...custom, tituloPersonalizado: "Laboratório" },
+    403,
+  );
+  for (let i = 0; i < 2; i++)
     occurrence = await api(assist, "registrarOcorrencia", {
       alunoId: enrolled.id,
       anoLetivo: assist.data.configuracoes.anoLetivoAtivo,
       irregularidades: ["CAMISA"],
       chaveIdempotencia: `oc-${i}`,
     });
+  assert.equal(occurrence.contagem, 2);
+  occurrence = await api(assist, "registrarOcorrencia", {
+    ...custom,
+    tituloPersonalizado: "  Uso de material do laboratório  ",
+  });
+  assert.equal(occurrence.contagem, 3);
+  assert.equal(
+    occurrence.ocorrencia.tituloPersonalizado,
+    "Uso de material do laboratório",
+  );
+  assert.equal(
+    (
+      await api(assist, "registrarOcorrencia", {
+        ...custom,
+        tituloPersonalizado: "Uso de material do laboratório",
+      })
+    ).ocorrencia.id,
+    occurrence.ocorrencia.id,
+  );
   const id = occurrence.encaminhamento.id;
   const pending = await api(depe, "carregarDados");
   assert.deepEqual(pending.Usuarios, []);
@@ -216,10 +261,13 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
       .status,
     "ENCAMINHADO",
   );
+  const { snapshot } = await api(depe, "obterDadosDocumento", {
+    encaminhamentoId: id,
+  });
+  assert.equal(snapshot.aluno.id, enrolled.id);
   assert.equal(
-    (await api(depe, "obterDadosDocumento", { encaminhamentoId: id })).snapshot
-      .aluno.id,
-    enrolled.id,
+    snapshot.ocorrencias[2].tituloPersonalizado,
+    occurrence.ocorrencia.tituloPersonalizado,
   );
   const pdf = await api(depe, "gerarPdfEncaminhamento", {
     encaminhamentoId: id,

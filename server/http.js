@@ -62,6 +62,9 @@ export function createServer({ config, auth, service }) {
           return json(200, {
             demo: config.demo,
             passwordLogin: Boolean(config.passwordLogin),
+            ocorrenciasPersonalizadas: Boolean(
+              config.demo || config.passwordLogin,
+            ),
           });
         if (
           req.method === "POST" &&
@@ -178,11 +181,24 @@ export function createServer({ config, auth, service }) {
           "/": ["public/index.html", "text/html"],
           "/style.css": ["public/style.css", "text/css"],
           "/app.js": ["public/app.js", "application/javascript"],
+          "/theme.js": ["public/theme.js", "application/javascript"],
           "/core.js": ["shared/core.cjs", "application/javascript"],
+          "/assets/ifam-claro.png": [
+            "public/assets/ifam-claro.png",
+            "image/png",
+          ],
+          "/assets/ifam-escuro.png": [
+            "public/assets/ifam-escuro.png",
+            "image/png",
+          ],
         };
         if (req.method === "GET" && Object.hasOwn(files, url.pathname)) {
           const [file, type] = files[url.pathname];
-          res.writeHead(200, { "Content-Type": type + "; charset=utf-8" });
+          res.writeHead(200, {
+            "Content-Type": type.startsWith("image/")
+              ? type
+              : type + "; charset=utf-8",
+          });
           return res.end(await readFile(path.join(root, file)));
         }
         fault("NOT_FOUND", "Endereço não encontrado.", 404);

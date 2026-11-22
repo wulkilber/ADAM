@@ -1,6 +1,6 @@
 # ADAM — Ocorrências Estudantis
 
-Aplicação web do IFAM para registrar abordagens, acompanhar históricos anuais e organizar encaminhamentos ao DEP. **O servidor agora é Node.js; o armazenamento continua sendo Google Sheets.** A interface mantém o visual e os fluxos da versão enviada pelo responsável.
+Aplicação web do **IFAM – Campus Tefé** para registrar ocorrências, acompanhar históricos anuais e organizar encaminhamentos ao DEPE. A implantação no Render usa Node.js, PostgreSQL no Supabase e login com usuário e senha.
 
 ## Começar no computador
 
@@ -14,6 +14,20 @@ npm run demo
 Abra **http://localhost:3000** e clique em **Entrar em demonstração**.
 
 Esta demonstração usa dados fictícios em memória no **servidor**. Navegadores conectados à mesma instância veem o mesmo estado. Encerrar o servidor restaura os dados fictícios; a demonstração não escreve na planilha e não é permitida quando NODE_ENV=production.
+
+### Revisar os três perfis localmente
+
+Depois de instalar as dependências com `npm ci`, execute:
+
+```sh
+node test/helpers/portal-preview.js
+```
+
+Abra **http://127.0.0.1:3100**. Entre com `admin`, `assistente` ou `depe`. A senha de teste é `adamteste` para todos. A revisão roda no seu computador com dados fictícios em memória.
+
+O título da ocorrência personalizada é gravado no JSON da própria ocorrência no PostgreSQL e copiado ao histórico do encaminhamento. Os registros anteriores continuam compatíveis. A atualização dispensa migração SQL.
+
+As marcas usadas na interface são do [portal oficial do IFAM](https://portal.ifam.edu.br/). O nome do campus acompanha as duas versões da marca.
 
 ## Conectar a planilha existente
 
@@ -36,9 +50,9 @@ Não envie `.env`, chaves JSON, tokens, backups ou dados reais ao GitHub. O repo
 
 ## Funcionalidades
 
-- Login Google com identidade verificada no servidor, allowlist da aba Usuarios e perfis ADMIN, ASSISTENTE e DEP.
+- Login com usuário e senha e permissões de Administrador, Assistente de Alunos e DEPE verificadas no servidor. A integração legada com planilhas mantém seu fluxo de login Google.
 - Cadastro/edição de alunos, matrícula textual única, filtros e histórico por ano letivo.
-- Uma abordagem conta uma vez, mesmo com camisa, calça e sapato marcados juntos.
+- Uma abordagem conta uma vez, mesmo com vários tipos predefinidos. Na versão PostgreSQL, o assistente também pode registrar um tipo personalizado com título próprio.
 - Terceira ocorrência cria um único encaminhamento PENDENTE com snapshot e três IDs.
 - Transições explícitas PENDENTE → ENCAMINHADO → CONCLUIDO; conclusão não zera histórico.
 - Documento imprimível e PDF A4 gerado pelo servidor, sem arquivos temporários no Google Drive.

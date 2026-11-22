@@ -38,7 +38,9 @@ test("Fluxo completo: cadastro → três abordagens → PDF → encaminhamento �
     ).toBeVisible();
     await expect(page.locator(".success")).toContainText(`${i + 1} de 3`);
   }
-  await page.getByRole("button", { name: "Ver encaminhamento ao DEP" }).click();
+  await page
+    .getByRole("button", { name: "Ver encaminhamento ao DEPE", exact: true })
+    .click();
   await expect(page.getByText("Três abordagens vinculadas")).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Baixar PDF" }).click();

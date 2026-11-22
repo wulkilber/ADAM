@@ -50,6 +50,11 @@ export function buildBatch(snapshot, writes) {
     needed = {};
   for (const { table, row } of writes) {
     if (!SCHEMA[table]) fault("VALIDATION_ERROR", "Aba desconhecida.");
+    if (table === "Ocorrencias" && row.tituloPersonalizado)
+      fault(
+        "VALIDATION_ERROR",
+        "Ocorrências personalizadas estão disponíveis na versão PostgreSQL.",
+      );
     const id = row[SCHEMA[table][0]],
       key = `${table}:${id}`;
     if (id === undefined || id === "")

@@ -1,6 +1,21 @@
 (function (root) {
   "use strict";
-  const TYPES = ["CAMISA", "CALCA", "SAPATO", "ATRASO"];
+  const TYPES = ["CAMISA", "CALCA", "SAPATO", "ATRASO", "PERSONALIZADA"];
+  const CUSTOM_TITLE_MAX = 100;
+  const CAMPUS_NAME = "IFAM – Campus Tefé";
+  const typeLabels = {
+    CAMISA: "Camisa",
+    CALCA: "Calça",
+    SAPATO: "Sapato",
+    ATRASO: "Atraso",
+    PERSONALIZADA: "Personalizada",
+  };
+  function describeType(type, title) {
+    if (type === "PERSONALIZADA" && title) return "Personalizada: " + title;
+    if (["CAMISA", "CALCA", "SAPATO"].includes(type))
+      return typeLabels[type] + " fora do padrão";
+    return typeLabels[type] || type;
+  }
   const RIGHTS = {
     ADMIN: [
       "read",
@@ -83,6 +98,7 @@
         "alunoId",
         "anoLetivo",
         "irregularidades",
+        "tituloPersonalizado",
         "observacao",
         "chaveIdempotencia",
       ],
@@ -137,6 +153,25 @@
           "Selecione ao menos uma irregularidade válida, sem repetições.",
         );
       n.irregularidades = [...n.irregularidades].sort();
+      if (n.irregularidades.includes("PERSONALIZADA")) {
+        if (n.irregularidades.length !== 1)
+          fail(
+            "VALIDATION_ERROR",
+            "Registre a ocorrência personalizada separadamente dos tipos predefinidos.",
+          );
+        const title =
+          typeof n.tituloPersonalizado === "string"
+            ? n.tituloPersonalizado.trim()
+            : n.tituloPersonalizado;
+        n.tituloPersonalizado = text(
+          title,
+          "título da ocorrência",
+          CUSTOM_TITLE_MAX,
+          true,
+        );
+      } else {
+        delete n.tituloPersonalizado;
+      }
       n.observacao = text(n.observacao || "", "observação", 2000, false);
     }
     if (type === "cadastrarAluno" || type === "atualizarAluno") {
@@ -202,6 +237,9 @@
         registradoEm: now,
         assistenteId: user.id,
         irregularidadesJson: JSON.stringify(p.irregularidades),
+        ...(p.tituloPersonalizado && {
+          tituloPersonalizado: p.tituloPersonalizado,
+        }),
         observacao: p.observacao,
         status: "ATIVA",
         operacaoId: op,
@@ -315,6 +353,10 @@
   }
   root.IFAM = {
     TYPES,
+    CUSTOM_TITLE_MAX,
+    CAMPUS_NAME,
+    typeLabels,
+    describeType,
     RIGHTS,
     PORTAL_RIGHTS,
     mutationRight,

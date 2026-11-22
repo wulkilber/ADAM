@@ -1,14 +1,14 @@
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "node:url";
+import I from "../shared/core.cjs";
 
-const types = { CAMISA: "Camisa", CALCA: "Calça", SAPATO: "Sapato" };
 export function makePdf(data, { logoPath = "" } = {}) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: "A4",
       margins: { top: 48, bottom: 48, left: 48, right: 48 },
       bufferPages: true,
-      info: { Title: "Encaminhamento ao DEP", Author: "ADAM — IFAM" },
+      info: { Title: "Encaminhamento ao DEPE", Author: I.CAMPUS_NAME },
     });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
@@ -47,9 +47,13 @@ export function makePdf(data, { logoPath = "" } = {}) {
         .fillColor("#24382e")
         .font("Body")
         .fontSize(10)
-        .text(data.instituicao.campus)
+        .text(I.CAMPUS_NAME)
         .moveDown();
-      doc.font("Bold").fontSize(20).text("Encaminhamento ao DEP").moveDown(0.5);
+      doc
+        .font("Bold")
+        .fontSize(20)
+        .text("Encaminhamento ao DEPE")
+        .moveDown(0.5);
       doc
         .font("Body")
         .fontSize(10)
@@ -63,7 +67,7 @@ export function makePdf(data, { logoPath = "" } = {}) {
         .text(`Curso: ${a.curso} · Turma: ${a.turma}`)
         .moveDown();
       doc.text(
-        "O estudante atingiu três ocorrências no ano letivo indicado. Seguem os registros que motivaram o encaminhamento para acompanhamento pelo DEP.",
+        "O estudante atingiu três ocorrências no ano letivo indicado. Seguem os registros que motivaram o encaminhamento para acompanhamento pelo DEPE.",
       );
       data.snapshot.ocorrencias.forEach((o, i) => {
         const height =
@@ -79,7 +83,7 @@ export function makePdf(data, { logoPath = "" } = {}) {
         section(`${i + 1}. Abordagem de ${date(o.dataHoraAbordagem)}`);
         doc.text(
           JSON.parse(o.irregularidadesJson)
-            .map((t) => `${types[t]} fora do padrão`)
+            .map((t) => I.describeType(t, o.tituloPersonalizado))
             .join("; "),
         );
         doc.text(`Observação: ${o.observacao || "Sem observação."}`, {
@@ -109,7 +113,7 @@ export function makePdf(data, { logoPath = "" } = {}) {
           .fontSize(8)
           .fillColor("#68786d")
           .text(
-            `ADAM · IFAM     |     Página ${i + 1} de ${range.count}`,
+            `ADAM · ${I.CAMPUS_NAME}     |     Página ${i + 1} de ${range.count}`,
             48,
             doc.page.height - 35,
             { lineBreak: false, align: "center", width: 499 },

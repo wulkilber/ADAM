@@ -21,20 +21,21 @@ const $ = (s) => document.querySelector(s),
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
   };
 const labels = {
-  CAMISA: "Camisa",
-  CALCA: "Calça",
-  SAPATO: "Sapato",
-  ATRASO: "Atraso",
+  ...IFAM.typeLabels,
   PENDENTE: "Pendente",
   ENCAMINHADO: "Encaminhado",
   CONCLUIDO: "Concluído",
 };
 const icons = {
+  admin:
+    "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21v-2a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v2M17 18h6m-3-3v6",
+  moon: "M20.8 14A9 9 0 0 1 10 3.2 9 9 0 1 0 20.8 14Z",
+  sun: "M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5m-2 7a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
   home: "M3 10 12 3l9 7v11h-6v-7H9v7H3z",
   students:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6m-3-3h6",
   plus: "M12 5v14M5 12h14",
-  dep: "M9 3H5v18h14V7l-4-4H9m0 0v5h6M8 13h8M8 17h6",
+  depe: "M9 3H5v18h14V7l-4-4H9m0 0v5h6M8 13h8M8 17h6",
   reports: "M4 21V11m8 10V3m8 18V7",
   arrow: "M5 12h14m-6-6 6 6-6 6",
   clock: "M12 8v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
@@ -44,12 +45,11 @@ const icons = {
   logout: "M9 3H3v18h6m4-15 6 6-6 6m-6-6h12",
 };
 const icon = (k) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[k] || icons.dep}"/></svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[k] || icons.depe}"/></svg>`;
 let db,
   user,
   permissions = [],
   config = {
-    campus: "Campus a definir",
     anoLetivoAtivo: 2026,
     fusoHorario: "America/Manaus",
   },
@@ -70,6 +70,7 @@ let db,
 let live = true,
   demoMode = false,
   passwordLogin = false,
+  customOccurrences = false,
   csrfToken = "";
 const rpc = async (name, p = {}) => {
   const controller = new AbortController(),
@@ -127,6 +128,11 @@ const service = {
   },
 };
 
+const availableTypes = () =>
+  customOccurrences
+    ? IFAM.TYPES
+    : IFAM.TYPES.filter((type) => type !== "PERSONALIZADA");
+
 const can = (r) => permissions.includes(r),
   student = (id) => db.Alunos.find((a) => a.id === id),
   annual = (id) => IFAM.active(db, id, year),
@@ -140,10 +146,13 @@ const can = (r) => permissions.includes(r),
     `<span class="badge ${s === "PENDENTE" ? "warn" : s === "CONCLUIDO" ? "green" : ""}">${s === "CONCLUIDO" ? "✓ " : s === "PENDENTE" ? "◷ " : ""}${labels[s] || esc(s)}</span>`,
   tags = (o) =>
     JSON.parse(o.irregularidadesJson)
-      .map((t) => `<span class="badge">${labels[t]}</span>`)
+      .map(
+        (t) =>
+          `<span class="badge">${esc(t === "PERSONALIZADA" ? IFAM.describeType(t, o.tituloPersonalizado) : labels[t] || t)}</span>`,
+      )
       .join(""),
-  typeDescription = (t) =>
-    t === "ATRASO" ? "Atraso" : `${labels[t]} fora do padrão`,
+  occurrenceDescription = (types, title, separator) =>
+    types.map((type) => esc(IFAM.describeType(type, title))).join(separator),
   initials = (n) =>
     n
       .split(" ")
@@ -163,7 +172,7 @@ function navigate(p, id = "") {
   if (
     passwordLogin &&
     user.perfil === "DEP" &&
-    !["dep", "document"].includes(p)
+    !["depe", "document"].includes(p)
   )
     return;
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
@@ -177,11 +186,37 @@ function navigate(p, id = "") {
   countFilter = "";
   pendingKey = null;
   render();
+  $("#content h1")?.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
+const themeToggle = () =>
+  `<button type="button" class="theme-toggle quiet" data-theme-toggle aria-label="Tema escuro" aria-pressed="${document.documentElement.dataset.theme === "dark"}" title="Tema escuro"><span class="theme-light">${icon("moon")}</span><span class="theme-dark">${icon("sun")}</span></button>`;
+
+const campusMark = () =>
+  `<span class="campus-mark" aria-hidden="true"><img class="theme-light" src="/assets/ifam-claro.png" alt=""><img class="theme-dark" src="/assets/ifam-escuro.png" alt=""></span>`;
+
+function accessScreen(form) {
+  $("#app").innerHTML = `<main class="login">
+    <section class="login-identity" aria-label="${IFAM.CAMPUS_NAME}">
+      <div class="login-campus">${campusMark()}<span>${IFAM.CAMPUS_NAME}</span></div>
+      <div class="login-product"><strong>ADAM</strong><p>Sistema de Ocorrências Estudantis</p></div>
+    </section>
+    <section class="login-access">
+      <div class="login-controls">${themeToggle()}</div>
+      <div class="login-card">${form}</div>
+      <div class="login-footer">${demoMode ? "Demonstração com dados fictícios" : "Acesso institucional"}</div>
+    </section>
+  </main>`;
+}
+
 function login(error = "") {
-  $("#app").innerHTML =
-    `<div class="login"><div class="login-card"><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small></div><h1>ADAM</h1><p>Ocorrências Estudantis</p><p>Registre, acompanhe e cuide da rotina escolar.</p>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<form id="login-form">${passwordLogin ? '<label class="field">Usuário<input name="usuario" autocomplete="username" required maxlength="128"></label><label class="field">Senha<input name="senha" type="password" autocomplete="current-password" required maxlength="256"></label>' : ""}<button class="primary" id="enter">${passwordLogin ? "Entrar" : demoMode ? "Entrar em demonstração" : "Entrar com Google"}</button></form><p>${demoMode ? "Dados fictícios em memória no servidor. Não conectado ao Google Sheets." : "Acesso restrito às contas autorizadas pela instituição."}</p></div></div>`;
+  accessScreen(`<h1>Entrar no ADAM</h1>
+    <p>${passwordLogin ? "Use as credenciais fornecidas pela instituição." : "Acesse o sistema de ocorrências estudantis."}</p>
+    ${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}
+    <form id="login-form">
+      ${passwordLogin ? '<label class="field">Usuário<input name="usuario" autocomplete="username" required maxlength="128"></label><label class="field">Senha<input name="senha" type="password" autocomplete="current-password" required maxlength="256"></label>' : ""}
+      <button class="primary" id="enter">${passwordLogin ? "Entrar" : demoMode ? "Entrar em demonstração" : "Entrar com Google"} ${icon("arrow")}</button>
+    </form>`);
   $("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
@@ -191,6 +226,7 @@ function login(error = "") {
     }
     const button = $("#enter");
     button.disabled = true;
+    button.textContent = "Entrando…";
     try {
       const response = await fetch(
         passwordLogin ? "/auth/password" : "/auth/demo",
@@ -215,10 +251,9 @@ function login(error = "") {
 
 function enterPortal() {
   if (user.trocaSenha) {
-    $("#app").innerHTML =
-      `<div class="login"><div class="login-card"><h1>Troque sua senha temporária</h1>
+    accessScreen(`<h1>Troque sua senha temporária</h1>
       <form id="change"><label class="field">Nova senha<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
-      <p id="change-error" role="alert"></p><button class="primary">Salvar e entrar</button></form></div></div>`;
+      <p id="change-error" role="alert"></p><button class="primary">Salvar e entrar</button></form>`);
     $("#change").onsubmit = async (event) => {
       event.preventDefault();
       const form = event.currentTarget,
@@ -241,7 +276,7 @@ function enterPortal() {
       user.perfil === "ADMIN"
         ? "admin"
         : user.perfil === "DEP"
-          ? "dep"
+          ? "depe"
           : "home";
     selected = "";
     query = course = classroom = countFilter = from = to = typeFilter = "";
@@ -300,30 +335,66 @@ function render() {
     ["home", "Início"],
     ["students", "Alunos"],
     ["register", "Registrar ocorrência"],
-    ["dep", "Encaminhamentos ao DEP"],
+    ["depe", "Encaminhamentos ao DEPE"],
     ["reports", "Relatórios"],
   ];
-  $("#app").innerHTML =
-    `<div class="layout"><aside><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small><div class="brand-label">Ocorrências Estudantis</div></div><div class="navlabel">PRINCIPAL</div><nav>${nav
-      .filter(([p]) =>
-        accountOnly
-          ? p === "admin"
-          : depeOnly
-            ? p === "dep"
-            : p !== "register" || can("register"),
-      )
-      .map(
-        ([p, t]) =>
-          `<button data-nav="${p}" class="${page === p || (p === "students" && page === "profile") ? "active" : ""}">${icon(p === "register" ? "plus" : p)}${t}</button>`,
-      )
-      .join(
-        "",
-      )}</nav>${accountOnly || depeOnly ? "" : `<div class="aside-foot"><strong>Acompanhamento com cuidado.</strong><br>Registros que apoiam a rotina<br>da comunidade escolar.<br><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div>`}</aside><div class="main"><header><button class="quiet menu-toggle" aria-label="Abrir menu" id="menu">☰</button><span class="mobile-brand">IFAM</span><div class="campus"><strong>${accountOnly ? "ADAM" : esc(config.campus)}</strong>${accountOnly ? "Administração de contas" : "Gestão e acompanhamento estudantil"}</div><div class="header-right">${accountOnly ? "" : `<label style="font-size:11px;color:#7d8980">Ano letivo <select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label>`}<div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${user.perfil === "ADMIN" ? "Administrador" : user.perfil === "DEP" ? "Responsável DEP" : "Assistente de alunos"}</small></div></div><button class="quiet" id="logout" aria-label="Sair">${icon("logout")}</button></div></header><main><div class="demo"><span class="dot"></span>${demoMode ? "DEMONSTRAÇÃO · Dados fictícios em memória no servidor. Google Sheets não conectado." : passwordLogin ? "AMBIENTE INSTITUCIONAL · acesso autorizado" : "AMBIENTE INSTITUCIONAL · Google Sheets · acesso autorizado"}</div><div id="content"></div><div class="footer">IFAM · Ocorrências Estudantis${accountOnly ? "" : ` &nbsp; / &nbsp; Ano letivo ${year}`}</div></main></div></div>`;
+  const items = nav
+    .filter(([p]) =>
+      accountOnly
+        ? p === "admin"
+        : depeOnly
+          ? p === "depe"
+          : p !== "register" || can("register"),
+    )
+    .map(([p, label]) => {
+      const active =
+        page === p ||
+        (p === "students" && page === "profile") ||
+        (p === "depe" && page === "document");
+      return `<button data-nav="${p}" ${active ? 'class="active" aria-current="page"' : ""}>${icon(p === "register" ? "plus" : p)}${label}</button>`;
+    })
+    .join("");
+  $("#app").innerHTML = `
+    <div class="layout">
+      <aside id="sidebar">
+        <div class="sidebar-brand"><strong>ADAM</strong><span>Ocorrências Estudantis</span></div>
+        <nav aria-label="Menu principal">${items}</nav>
+        ${accountOnly || depeOnly ? "" : `<div class="aside-foot"><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div>`}
+      </aside>
+      <div class="main">
+        <header>
+          <button class="quiet menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false" id="menu">☰</button>
+          <div class="campus">${campusMark()}<strong>${IFAM.CAMPUS_NAME}</strong></div>
+          <div class="header-right">
+            ${accountOnly ? "" : `<label class="year-field"><span>Ano letivo</span><select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label>`}
+            ${themeToggle()}
+            <div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${roles[user.perfil]}</small></div></div>
+            <button class="quiet" id="logout" aria-label="Sair" title="Sair">${icon("logout")}</button>
+          </div>
+        </header>
+        <main id="main-content">
+          ${demoMode ? '<div class="demo"><span class="dot"></span>Demonstração com dados fictícios</div>' : ""}
+          <div id="content"></div>
+          <footer class="footer">${IFAM.CAMPUS_NAME}${accountOnly ? "" : ` · Ano letivo ${year}`}</footer>
+        </main>
+      </div>
+    </div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((b) => (b.onclick = () => navigate(b.dataset.nav)));
-  $("#menu").onclick = () =>
-    document.querySelector("aside").classList.toggle("open");
+  const menu = $("#menu");
+  menu.onclick = () => {
+    const open = $("#sidebar").classList.toggle("open");
+    menu.setAttribute("aria-expanded", String(open));
+    menu.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+    if (open) $("#sidebar nav button").focus();
+  };
+  $("#sidebar").onkeydown = (event) => {
+    if (event.key === "Escape" && $("#sidebar").classList.contains("open")) {
+      menu.click();
+      menu.focus();
+    }
+  };
   if ($("#year"))
     $("#year").onchange = (e) => {
       if (dirty && !confirm("Descartar o formulário para mudar o ano?")) {
@@ -359,7 +430,7 @@ function render() {
       home,
       students,
       register,
-      dep,
+      depe,
       reports,
       profile,
       document: documentView,
@@ -368,7 +439,7 @@ function render() {
   )();
 }
 function heading(k, title, sub, action = "") {
-  return `<div class="eyebrow">${k}</div><div class="title-row"><div><h1>${title}</h1><p>${sub}</p></div>${action}</div>`;
+  return `<div class="eyebrow">${k}</div><div class="title-row"><div><h1 tabindex="-1">${title}</h1><p>${sub}</p></div>${action}</div>`;
 }
 const newButton = () =>
   can("register")
@@ -420,7 +491,7 @@ function home() {
     ) +
     `<div class="filterbar"><label class="field" style="margin:0">De <input type="date" id="from" value="${from}"></label><label class="field" style="margin:0">Até <input type="date" id="to" value="${to}"></label></div>` +
     stats([
-      [os.length, "Ocorrências", "No período selecionado", "dep"],
+      [os.length, "Ocorrências", "No período selecionado", "depe"],
       [
         db.Alunos.filter((a) => annual(a.id).length === 2).length,
         "Atenção ao limite",
@@ -429,7 +500,7 @@ function home() {
       ],
       [
         refs.length,
-        "Pendentes no DEP",
+        "Pendentes no DEPE",
         "Aguardando encaminhamento no ano",
         "arrow",
       ],
@@ -445,11 +516,11 @@ function home() {
         .slice(0, 4)
         .map(
           (e) =>
-            `<div class="pending-item"><div>${person(student(e.alunoId))}<p>${esc(student(e.alunoId).turma)} &nbsp; · &nbsp; 3 ocorrências no ano</p></div><button class="text-link" onclick="navigate('dep','${e.id}')">${icon("arrow")}</button></div>`,
+            `<div class="pending-item"><div>${person(student(e.alunoId))}<p>${esc(student(e.alunoId).turma)} &nbsp; · &nbsp; 3 ocorrências no ano</p></div><button class="text-link" onclick="navigate('depe','${e.id}')" aria-label="Ver encaminhamento de ${esc(student(e.alunoId).nome)}">${icon("arrow")}</button></div>`,
         )
         .join("") ||
       '<div class="empty">Nenhuma pendência. Tudo acompanhado.</div>'
-    }<div style="padding:12px 20px"><button class="text-link" onclick="navigate('dep')">Acessar encaminhamentos ${icon("arrow")}</button></div></section><div class="note"><strong>Uma abordagem, um registro.</strong><br>Mesmo com mais de uma irregularidade, a abordagem conta como uma única ocorrência.</div></div></div>`;
+    }<div style="padding:12px 20px"><button class="text-link" onclick="navigate('depe')">Acessar encaminhamentos ${icon("arrow")}</button></div></section><div class="note"><strong>Uma abordagem, um registro.</strong><br>Mesmo com mais de uma irregularidade, a abordagem conta como uma única ocorrência.</div></div></div>`;
   dateEvents(home);
 }
 function options(field, value) {
@@ -558,7 +629,7 @@ function studentModal(a) {
   );
 }
 function historyHTML(os) {
-  return `<div class="timeline">${os.map((o) => `<article><time>${dt(o.dataHoraAbordagem)}</time><h3>${JSON.parse(o.irregularidadesJson).map(typeDescription).join(" · ")}</h3><p>${esc(o.observacao || "Sem observação.")}</p><p>Registrado por ${esc(o.assistenteNome || db.Usuarios.find((u) => u.id === o.assistenteId)?.nome || "Usuário autorizado")}</p></article>`).join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"}</div>`;
+  return `<div class="timeline">${os.map((o) => `<article><time>${dt(o.dataHoraAbordagem)}</time><h3>${occurrenceDescription(JSON.parse(o.irregularidadesJson), o.tituloPersonalizado, " · ")}</h3><p>${esc(o.observacao || "Sem observação.")}</p><p>Registrado por ${esc(o.assistenteNome || db.Usuarios.find((u) => u.id === o.assistenteId)?.nome || "Usuário autorizado")}</p></article>`).join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"}</div>`;
 }
 function profile() {
   const a = student(selected);
@@ -579,7 +650,7 @@ function profile() {
       `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)}`,
       `<button onclick="navigate('students')">Voltar para alunos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Histórico de ${year}</h2><span class="badge">${os.length} registros</span></div><div class="panel-body">${historyHTML(os)}</div></section><section><div class="panel"><div class="panel-body"><h2>Acompanhamento anual</h2><div class="steps">${[1, 2, 3].map((n) => `<span class="${os.length >= n ? "on" : ""}"></span>`).join("")}</div><p>${os.length} de 3 ocorrências no ano letivo</p>${ref ? `<div class="note">Limite atingido neste ano letivo.<br>Encaminhamento ao DEP: ${badge(ref.status)}</div><button style="width:100%;margin-top:18px" onclick="navigate('dep','${ref.id}')">Ver encaminhamento</button>` : can("register") ? `<button class="primary" style="width:100%;margin-top:18px" onclick="navigate('register','${a.id}')">Registrar ocorrência</button>` : ""}${can("student") ? '<button id="edit-student" class="quiet" style="margin-top:10px">Editar cadastro</button>' : ""}</div></div><p>A mudança do ano mantém todo o histórico anterior. Concluir o atendimento não zera a contagem.</p></section></div>`;
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Histórico de ${year}</h2><span class="badge">${os.length} registros</span></div><div class="panel-body">${historyHTML(os)}</div></section><section><div class="panel"><div class="panel-body"><h2>Acompanhamento anual</h2><div class="steps">${[1, 2, 3].map((n) => `<span class="${os.length >= n ? "on" : ""}"></span>`).join("")}</div><p>${os.length} de 3 ocorrências no ano letivo</p>${ref ? `<div class="note">Limite atingido neste ano letivo.<br>Encaminhamento ao DEPE: ${badge(ref.status)}</div><button style="width:100%;margin-top:18px" onclick="navigate('depe','${ref.id}')">Ver encaminhamento</button>` : can("register") ? `<button class="primary" style="width:100%;margin-top:18px" onclick="navigate('register','${a.id}')">Registrar ocorrência</button>` : ""}${can("student") ? '<button id="edit-student" class="quiet" style="margin-top:10px">Editar cadastro</button>' : ""}</div></div><p>A mudança do ano mantém todo o histórico anterior. Concluir o atendimento não zera a contagem.</p></section></div>`;
   if ($("#edit-student")) $("#edit-student").onclick = () => studentModal(a);
 }
 function register() {
@@ -603,11 +674,18 @@ function register() {
       )
       .join(
         "",
-      )}</select></label><div id="student-summary"></div><label class="field">2. Tipo de ocorrência</label><div class="choices">${IFAM.TYPES.map((t) => `<label class="choice"><input type="checkbox" name="types" value="${t}"><span><strong>${labels[t]}</strong><br><small>${t === "ATRASO" ? "Chegada após o horário" : "Fora do padrão"}</small></span></label>`).join("")}</div><p>Selecione uma ou mais opções. Cada abordagem contará como uma única ocorrência, mesmo que tenha mais de um tipo.</p><label class="field">3. Observação <span style="font-weight:400">Opcional</span><textarea id="observation" maxlength="2000" placeholder="Descreva a abordagem de forma objetiva e respeitosa."></textarea></label><div class="note">Responsável: <strong>${esc(user.nome)}</strong><br>Data e horário serão registrados na confirmação, no fuso ${esc(config.fusoHorario)}.</div><div id="form-error" role="alert"></div><div class="actions"><button type="button" onclick="navigate('home')">Cancelar</button><button class="primary" ${inactive ? "disabled" : ""}>Revisar registro ${icon("arrow")}</button></div></form></div></section>`;
+      )}</select></label><div id="student-summary"></div><fieldset class="occurrence-types"><legend>2. Tipo de ocorrência</legend><div class="choices">${availableTypes()
+      .map(
+        (t) =>
+          `<label class="choice"><input type="checkbox" name="types" value="${t}"><span><strong>${labels[t]}</strong><br><small>${t === "PERSONALIZADA" ? "Informar outro tipo" : t === "ATRASO" ? "Chegada após o horário" : "Fora do padrão"}</small></span></label>`,
+      )
+      .join(
+        "",
+      )}</div><p>Selecione os tipos aplicáveis. Cada abordagem conta como uma ocorrência.</p></fieldset>${customOccurrences ? `<label class="field" id="custom-title-field" hidden>Título da ocorrência<input id="custom-title" maxlength="${IFAM.CUSTOM_TITLE_MAX}" disabled></label>` : ""}<label class="field">3. Observação <span style="font-weight:400">Opcional</span><textarea id="observation" maxlength="2000" placeholder="Descreva a abordagem de forma objetiva e respeitosa."></textarea></label><div class="note">Responsável: <strong>${esc(user.nome)}</strong><br>Data e horário serão registrados na confirmação, no fuso ${esc(config.fusoHorario)}.</div><div id="form-error" role="alert"></div><div class="actions"><button type="button" onclick="navigate('home')">Cancelar</button><button class="primary" ${inactive ? "disabled" : ""}>Revisar registro ${icon("arrow")}</button></div></form></div></section>`;
   const summary = () => {
     const a = student($("#student-select").value);
     $("#student-summary").innerHTML = a
-      ? `<div class="note">${esc(a.curso)} · ${esc(a.turma)}<br><strong>${annual(a.id).length} de 3 ocorrências em ${year}</strong>${annual(a.id).length === 2 ? "<p>Este registro atingirá o limite de três ocorrências e incluirá o aluno na lista de encaminhamentos ao DEP.</p>" : annual(a.id).length >= 3 ? "<p>Limite atingido. Novos registros dependem de definição institucional.</p>" : ""}</div>`
+      ? `<div class="note">${esc(a.curso)} · ${esc(a.turma)}<br><strong>${annual(a.id).length} de 3 ocorrências em ${year}</strong>${annual(a.id).length === 2 ? "<p>Este registro atingirá o limite de três ocorrências e incluirá o aluno na lista de encaminhamentos ao DEPE.</p>" : annual(a.id).length >= 3 ? "<p>Limite atingido. Novos registros dependem de definição institucional.</p>" : ""}</div>`
       : "";
   };
   summary();
@@ -631,20 +709,37 @@ function register() {
         .join("");
     summary();
   };
+  const title = $("#custom-title");
+  if (title) {
+    const choices = [...document.querySelectorAll("[name=types]")];
+    const custom = choices.find((choice) => choice.value === "PERSONALIZADA");
+    $("#occurrence-form").onchange = (event) => {
+      const choice = event.target;
+      if (!choices.includes(choice)) return;
+      if (choice.checked) {
+        for (const other of choices)
+          if (other !== choice && (choice === custom || other === custom))
+            other.checked = false;
+      }
+      $("#custom-title-field").hidden = title.disabled = !custom.checked;
+      title.required = custom.checked;
+    };
+  }
   $("#occurrence-form").oninput = () => (dirty = true);
   $("#occurrence-form").onsubmit = (e) => {
     e.preventDefault();
-    const p = {
+    let p = {
       alunoId: $("#student-select").value,
       anoLetivo: year,
       irregularidades: [
         ...document.querySelectorAll("[name=types]:checked"),
       ].map((x) => x.value),
+      ...(title && !title.disabled && { tituloPersonalizado: title.value }),
       observacao: $("#observation").value,
       chaveIdempotencia: pendingKey || uid(),
     };
     try {
-      IFAM.normalize("registrarOcorrencia", p);
+      p = IFAM.normalize("registrarOcorrencia", p);
       if (annual(p.alunoId).length >= 3)
         throw new Error(
           "Limite atingido. A política após três ocorrências está pendente de definição.",
@@ -656,7 +751,7 @@ function register() {
     }
     pendingKey = p.chaveIdempotencia;
     modal(
-      `<h2>Conferir e confirmar</h2><p><strong>${esc(student(p.alunoId).nome)}</strong> · ${year}</p><p>${p.irregularidades.map(typeDescription).join(" e ")}</p><p>${esc(p.observacao || "Sem observação.")}</p><div class="note">Este registro conta como uma abordagem.${annual(p.alunoId).length === 2 ? " Será criada uma pendência de encaminhamento ao DEP." : ""}</div><div id="confirm-error" role="alert"></div><div class="actions"><button data-close>Voltar</button><button class="primary" id="confirm-register">Confirmar registro</button></div>`,
+      `<h2>Conferir e confirmar</h2><p><strong>${esc(student(p.alunoId).nome)}</strong> · ${year}</p><p>${occurrenceDescription(p.irregularidades, p.tituloPersonalizado, " e ")}</p><p>${esc(p.observacao || "Sem observação.")}</p><div class="note">Este registro conta como uma abordagem.${annual(p.alunoId).length === 2 ? " Será criada uma pendência de encaminhamento ao DEPE." : ""}</div><div id="confirm-error" role="alert"></div><div class="actions"><button data-close>Voltar</button><button class="primary" id="confirm-register">Confirmar registro</button></div>`,
     );
     $("#confirm-register").onclick = async () => {
       const b = $("#confirm-register");
@@ -674,7 +769,7 @@ function register() {
             "Abordagem registrada.",
             "O histórico do aluno foi atualizado.",
           ) +
-          `<div class="panel form-card"><div class="panel-body"><div class="success">✓ ${esc(student(p.alunoId).nome)} · ${result.contagem} de 3 ocorrências em ${year}.</div>${result.encaminhamento ? "<p>Uma pendência foi criada no DEP. O documento ainda não foi encaminhado.</p>" : ""}<div class="actions"><button onclick="navigate('profile','${p.alunoId}')">Ver histórico</button>${result.encaminhamento ? `<button onclick="navigate('dep','${result.encaminhamento.id}')">Ver encaminhamento ao DEP</button>` : ""}<button class="primary" onclick="navigate('register')">Registrar outra ocorrência</button></div></div></div>`;
+          `<div class="panel form-card"><div class="panel-body"><div class="success">✓ ${esc(student(p.alunoId).nome)} · ${result.contagem} de 3 ocorrências em ${year}.</div>${result.encaminhamento ? "<p>Uma pendência foi criada no DEPE. O documento ainda não foi encaminhado.</p>" : ""}<div class="actions"><button onclick="navigate('profile','${p.alunoId}')">Ver histórico</button>${result.encaminhamento ? `<button onclick="navigate('depe','${result.encaminhamento.id}')">Ver encaminhamento ao DEPE</button>` : ""}<button class="primary" onclick="navigate('register')">Registrar outra ocorrência</button></div></div></div>`;
       } catch (err) {
         $("#confirm-error").innerHTML =
           `<div class="error">${esc(err.message)}</div>`;
@@ -684,12 +779,12 @@ function register() {
     };
   };
 }
-function dep(only = false) {
+function depe(only = false) {
   if (selected) {
     referralDetail();
     return;
   }
-  const depe = passwordLogin && user.perfil === "DEP";
+  const depeOnly = passwordLogin && user.perfil === "DEP";
   const rs = db.Encaminhamentos.filter(
     (e) =>
       +e.anoLetivo === year &&
@@ -698,7 +793,7 @@ function dep(only = false) {
       matches(student(e.alunoId)),
   );
   const list = rs.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Sem confirmação"}</td>` : ""}<td><button class="text-link" onclick="navigate('dep','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
+    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Sem confirmação"}</td>` : ""}<td><button class="text-link" onclick="navigate('depe','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
     : '<div class="empty">Nenhum encaminhamento encontrado com estes filtros.</div>';
   if (only) {
     $("#ref-results").innerHTML = list;
@@ -709,22 +804,22 @@ function dep(only = false) {
       "ACOMPANHAMENTO",
       passwordLogin && user.perfil === "DEP"
         ? "Fila do DEPE"
-        : "Encaminhamentos ao DEP",
+        : "Encaminhamentos ao DEPE",
       `Casos no ano letivo de ${year}.`,
       passwordLogin
-        ? `<div class="actions"><button id="refresh-referrals">Atualizar</button>${depe && can("createStudent") ? '<button class="primary" id="add-student">Cadastrar aluno</button>' : ""}</div>`
+        ? `<div class="actions"><button id="refresh-referrals">Atualizar</button>${depeOnly && can("createStudent") ? '<button class="primary" id="add-student">Cadastrar aluno</button>' : ""}</div>`
         : "",
     ) +
-    `<div class="tabs">${(depe ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
+    `<div class="tabs">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
-    `<section class="panel" id="ref-results">${list}</section>${depe ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEP.</div>'}`;
-  filterEvents(dep);
+    `<section class="panel" id="ref-results">${list}</section>${depeOnly ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEPE.</div>'}`;
+  filterEvents(depe);
   if ($("#add-student")) $("#add-student").onclick = () => studentModal();
   if ($("#refresh-referrals"))
     $("#refresh-referrals").onclick = async () => {
       try {
         await service.refresh();
-        if (page === "dep") dep();
+        if (page === "depe") depe();
       } catch (error) {
         toast(error.message);
       }
@@ -733,7 +828,7 @@ function dep(only = false) {
     (b) =>
       (b.onclick = () => {
         statusFilter = b.dataset.status;
-        dep();
+        depe();
       }),
   );
 }
@@ -741,18 +836,18 @@ function referralDetail() {
   const r = db.Encaminhamentos.find((e) => e.id === selected);
   if (!r) {
     selected = "";
-    dep();
+    depe();
     return;
   }
   const snap = JSON.parse(r.snapshotJson);
   $("#content").innerHTML =
     heading(
-      "ENCAMINHAMENTO AO DEP",
+      "ENCAMINHAMENTO AO DEPE",
       esc(snap.aluno.nome),
       `${esc(snap.aluno.matricula)} · ${esc(snap.aluno.turma)} · Ano letivo ${r.anoLetivo}`,
-      `<button onclick="navigate('dep')">Voltar para encaminhamentos</button>`,
+      `<button onclick="navigate('depe')">Voltar para encaminhamentos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("dep")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
   if ($("#transition")) $("#transition").onclick = () => transition(r);
   if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
 }
@@ -760,7 +855,7 @@ function transition(r) {
   const send = r.status === "PENDENTE",
     key = uid();
   modal(
-    `<h2>${send ? "Registrar encaminhamento" : "Concluir atendimento"}</h2><p>${send ? "Confirme que o encaminhamento foi realizado." : "Confirme a conclusão do atendimento no DEP."} A data e o responsável serão registrados agora.</p><form><label class="field">Observação <textarea name="observacao" maxlength="2000"></textarea></label><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Confirmar ${send ? "encaminhamento" : "conclusão"}</button></div></form>`,
+    `<h2>${send ? "Registrar encaminhamento" : "Concluir atendimento"}</h2><p>${send ? "Confirme que o encaminhamento foi realizado." : "Confirme a conclusão do atendimento no DEPE."} A data e o responsável serão registrados agora.</p><form><label class="field">Observação <textarea name="observacao" maxlength="2000"></textarea></label><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Confirmar ${send ? "encaminhamento" : "conclusão"}</button></div></form>`,
     async (e) => {
       e.preventDefault();
       const b = e.target.querySelector(".primary");
@@ -789,7 +884,7 @@ function transition(r) {
   );
 }
 function docHTML(r, snap) {
-  return `<div class="document"><div class="eyebrow">INSTITUTO FEDERAL DO AMAZONAS</div><h2>IFAM · ${esc(config.campus)}</h2><hr><h1>Encaminhamento ao DEP</h1><p>Identificador: ${esc(r.id)}<br>Ano letivo: ${r.anoLetivo}</p><h3>Identificação do estudante</h3><p><strong>${esc(snap.aluno.nome)}</strong><br>Matrícula: ${esc(snap.aluno.matricula)}<br>Curso: ${esc(snap.aluno.curso)} · Turma: ${esc(snap.aluno.turma)}</p><p>O estudante atingiu três ocorrências no ano letivo indicado. Seguem os registros que motivaram este encaminhamento para acompanhamento pelo DEP.</p>${snap.ocorrencias.map((o, i) => `<article><h3>${i + 1}. Abordagem de ${dt(o.dataHoraAbordagem)}</h3><p>${JSON.parse(o.irregularidadesJson).map(typeDescription).join("; ")}.</p><p>Observação: ${esc(o.observacao || "Sem observação.")}<br>Assistente: ${esc(o.assistenteNome)}</p></article>`).join("")}<p>Emitido em ${dt(new Date().toISOString())} por ${esc(user.nome)}.</p><div class="signature">________________________________________<br>Assinatura do responsável</div>${demoMode ? "<p>Documento demonstrativo · dados fictícios.</p>" : ""}</div>`;
+  return `<div class="document"><div class="eyebrow">INSTITUTO FEDERAL DO AMAZONAS</div><h2>${IFAM.CAMPUS_NAME}</h2><hr><h1>Encaminhamento ao DEPE</h1><p>Identificador: ${esc(r.id)}<br>Ano letivo: ${r.anoLetivo}</p><h3>Identificação do estudante</h3><p><strong>${esc(snap.aluno.nome)}</strong><br>Matrícula: ${esc(snap.aluno.matricula)}<br>Curso: ${esc(snap.aluno.curso)} · Turma: ${esc(snap.aluno.turma)}</p><p>O estudante atingiu três ocorrências no ano letivo indicado. Seguem os registros que motivaram este encaminhamento para acompanhamento pelo DEPE.</p>${snap.ocorrencias.map((o, i) => `<article><h3>${i + 1}. Abordagem de ${dt(o.dataHoraAbordagem)}</h3><p>${occurrenceDescription(JSON.parse(o.irregularidadesJson), o.tituloPersonalizado, "; ")}.</p><p>Observação: ${esc(o.observacao || "Sem observação.")}<br>Assistente: ${esc(o.assistenteNome)}</p></article>`).join("")}<p>Emitido em ${dt(new Date().toISOString())} por ${esc(user.nome)}.</p><div class="signature">________________________________________<br>Assinatura do responsável</div>${demoMode ? "<p>Documento demonstrativo · dados fictícios.</p>" : ""}</div>`;
 }
 async function documentView() {
   const r = db.Encaminhamentos.find((e) => e.id === selected);
@@ -802,9 +897,9 @@ async function documentView() {
     $("#content").innerHTML =
       heading(
         "DOCUMENTO",
-        "Encaminhamento ao DEP",
+        "Encaminhamento ao DEPE",
         "A emissão não altera o status do encaminhamento.",
-        `<button onclick="navigate('dep','${r.id}')">Voltar</button>`,
+        `<button onclick="navigate('depe','${r.id}')">Voltar</button>`,
       ) +
       `<div class="actions no-print" style="margin-bottom:20px">${live ? '<button id="pdf-download">Baixar PDF</button>' : ""}<button class="primary" id="print">Imprimir / Salvar como PDF</button></div>` +
       docHTML(r, data.snapshot);
@@ -918,7 +1013,7 @@ function reports() {
   const ids = new Set(),
     courses = new Map(),
     monthCounts = new Map();
-  const types = new Map(IFAM.TYPES.map((type) => [type, 0]));
+  const types = new Map(availableTypes().map((type) => [type, 0]));
   for (let number = 1; number <= 12; number++) {
     const month = `${year}-${String(number).padStart(2, "0")}`;
     if (
@@ -942,7 +1037,7 @@ function reports() {
     ([a, av], [b, bv]) => bv - av || a.localeCompare(b, "pt-BR"),
   );
   const byType = [...types].map(([type, count]) => [
-    type === "ATRASO" ? "Atrasos" : labels[type] + " fora do padrão",
+    type === "ATRASO" ? "Atrasos" : IFAM.describeType(type),
     count,
   ]);
   const states = {
@@ -955,7 +1050,7 @@ function reports() {
     refs.filter((r) => r.status === state).length,
   ]);
   const totals = [
-    [os.length, "Abordagens", "Uma por registro", "dep"],
+    [os.length, "Abordagens", "Uma por registro", "depe"],
     [ids.size, "Alunos envolvidos", "Alunos distintos no período", "students"],
     [refs.length, "Encaminhamentos", "Pela data de criação do caso", "arrow"],
     [
@@ -984,7 +1079,12 @@ function reports() {
       <label class="field">Até<input type="date" id="to" value="${to}"></label>
       <select id="course" aria-label="Curso">${options("curso", course)}</select>
       <select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>
-      <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${IFAM.TYPES.map((t) => `<option value="${t}" ${typeFilter === t ? "selected" : ""}>${labels[t]}</option>`).join("")}</select>
+      <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${availableTypes()
+        .map(
+          (t) =>
+            `<option value="${t}" ${typeFilter === t ? "selected" : ""}>${labels[t]}</option>`,
+        )
+        .join("")}</select>
       <button id="clear-report-filters" ${hasFilters ? "" : "disabled"}>Limpar filtros</button>
     </div>` +
     (periodInvalid
@@ -1076,7 +1176,7 @@ function reports() {
 function settings() {
   $("#content").innerHTML =
     heading("INFORMAÇÕES", "Sobre o ADAM", "Ocorrências Estudantis · IFAM") +
-    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : passwordLogin ? "Registros armazenados no PostgreSQL do Supabase. Permissões verificadas pelo servidor." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${esc(config.campus)}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. A terceira ocorrência do ano cria uma pendência no DEP. Emitir o documento não encaminha automaticamente. Concluir atendimento mantém o histórico.</p><p>A marca oficial, os perfis e a política após três ocorrências dependem de validação institucional.</p></div></section>`;
+    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : passwordLogin ? "Registros armazenados no PostgreSQL do Supabase. Permissões verificadas pelo servidor." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${IFAM.CAMPUS_NAME}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. A terceira ocorrência do ano cria uma pendência no DEPE. Emitir o documento não encaminha automaticamente. Concluir atendimento mantém o histórico.</p><p>A política para registros após três ocorrências depende de definição institucional.</p></div></section>`;
 }
 window.addEventListener("beforeunload", (e) => {
   if (dirty) {
@@ -1093,6 +1193,7 @@ async function boot() {
     const modes = await r.json();
     demoMode = modes.demo === true;
     passwordLogin = modes.passwordLogin === true;
+    customOccurrences = modes.ocorrenciasPersonalizadas === true;
     await service.load();
     enterPortal();
   } catch (e) {
