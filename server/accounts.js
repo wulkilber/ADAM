@@ -20,12 +20,12 @@ export function validateUsername(value) {
 export async function passwordRecord(password) {
   if (
     typeof password !== "string" ||
-    password.length < 15 ||
+    password.length < 6 ||
     Buffer.byteLength(password) > 256
   )
     fault(
       "VALIDATION_ERROR",
-      "Use uma senha de pelo menos 15 caracteres e até 256 bytes.",
+      "Use uma senha de pelo menos 6 caracteres e até 256 bytes.",
     );
   const salt = randomBytes(16).toString("hex");
   return {

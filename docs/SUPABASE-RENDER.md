@@ -15,7 +15,7 @@ usando a planilha.
 2. Abra o Blueprint em
    https://dashboard.render.com/blueprint/new?repo=https://github.com/wulkilber/ADAM
    e conecte o repositório. Forneça a URI em **DATABASE_URL** e uma senha
-   temporária com pelo menos 15 caracteres em **ADAM_INITIAL_PASSWORD**.
+   temporária com pelo menos 6 caracteres em **ADAM_INITIAL_PASSWORD**.
    Digite os valores só no painel. O Blueprint usa o plano gratuito e não
    provisiona um segundo banco no Render.
 3. Aguarde a implantação. Abra a URL do serviço e entre como `admin` com a

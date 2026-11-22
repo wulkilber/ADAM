@@ -203,7 +203,7 @@ function enterPortal() {
   if (user.trocaSenha) {
     $("#app").innerHTML =
       `<div class="login"><div class="login-card"><h1>Troque sua senha temporária</h1>
-      <form id="change"><label class="field">Nova senha<input name="senha" type="password" autocomplete="new-password" minlength="15" required></label>
+      <form id="change"><label class="field">Nova senha<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
       <p id="change-error" role="alert"></p><button class="primary">Salvar e entrar</button></form></div></div>`;
     $("#change").onsubmit = async (event) => {
       event.preventDefault();
@@ -261,7 +261,7 @@ async function admin() {
         <label class="field">Nome<input name="nome" required maxlength="120"></label>
         <label class="field">Usuário<input name="usuario" required maxlength="40"></label>
         <label class="field">Perfil<select name="perfil">${roleOptions("ASSISTENTE")}</select></label>
-        <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="15" required></label>
+        <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
         <button class="primary">Cadastrar conta</button>
       </form></div></section>
       <section class="panel"><div class="panel-body"><h2>Contas</h2>${accounts
@@ -292,7 +292,7 @@ async function admin() {
           `<h2>Editar ${esc(account.usuario)}</h2><form>
           <label class="field">Perfil<select name="perfil">${roleOptions(account.perfil)}</select></label>
           <label><input name="ativo" type="checkbox" ${account.ativo ? "checked" : ""}> Conta ativa</label>
-          <label class="field">Nova senha temporária (opcional)<input name="senha" type="password" autocomplete="new-password" minlength="15"></label>
+          <label class="field">Nova senha temporária (opcional)<input name="senha" type="password" autocomplete="new-password" minlength="6"></label>
           <button class="primary">Salvar</button><button type="button" data-close>Cancelar</button></form>`,
           async (event) => {
             event.preventDefault();
