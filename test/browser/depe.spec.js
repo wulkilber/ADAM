@@ -229,6 +229,39 @@ test("DEPE gerencia alunos e casos e o assistente edita o histórico", async ({
     expect(csv).not.toMatch(
       /Ana Clara Oliveira|0020260001|Título corrigido fictício/,
     );
+    await nav(depe, "Cursos e turmas");
+    await depe
+      .getByRole("button", { name: "Excluir turma 2A do curso Curso piloto" })
+      .click();
+    await dialog.getByRole("button", { name: "Confirmar exclusão" }).click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      "Há alunos vinculados",
+    );
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
+
+    await depe
+      .getByRole("button", { name: "Excluir turma 3A do curso Curso piloto" })
+      .click();
+    await dialog.getByRole("button", { name: "Confirmar exclusão" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(
+      depe.getByRole("button", {
+        name: "Excluir turma 3A do curso Curso piloto",
+      }),
+    ).toHaveCount(0);
+    await depe.getByLabel("Nome do curso").fill("Curso descartável");
+    await depe.getByRole("button", { name: "Cadastrar curso" }).click();
+    await depe
+      .getByRole("button", { name: "Excluir curso Curso descartável" })
+      .click();
+    await dialog.getByRole("button", { name: "Confirmar exclusão" }).click();
+    await expect(
+      depe.getByRole("row", { name: /Curso descartável/ }),
+    ).toHaveCount(0);
+    await nav(assist, "Alunos");
+    await expect(assist.locator('#room option[value="Lab vazio"]')).toHaveCount(
+      0,
+    );
   } finally {
     await Promise.all([depe.close(), assist.close()]);
     server.close();

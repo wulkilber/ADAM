@@ -59,6 +59,8 @@
     desativarAluno: "deactivateStudent",
     cadastrarCurso: "manageCatalog",
     cadastrarTurma: "manageCatalog",
+    excluirCurso: "manageCatalog",
+    excluirTurma: "manageCatalog",
     confirmarLeituraDepe: "confirmReading",
     concluirEncaminhamento: "complete",
     registrarEncaminhamento: "send",
@@ -147,6 +149,8 @@
       ],
       cadastrarCurso: ["curso", "chaveIdempotencia"],
       cadastrarTurma: ["curso", "turma", "sala", "chaveIdempotencia"],
+      excluirCurso: ["curso", "chaveIdempotencia"],
+      excluirTurma: ["curso", "turma", "chaveIdempotencia"],
       desativarAluno: ["alunoId", "versaoEsperada", "chaveIdempotencia"],
       confirmarLeituraDepe: ["id", "chaveIdempotencia"],
       cadastrarAluno: [
@@ -223,12 +227,12 @@
       }
       n.observacao = text(n.observacao ?? "", "observação", 2000, false);
     }
-    if (type === "cadastrarCurso" || type === "cadastrarTurma")
+    if (mutationRight(type) === "manageCatalog")
       n.curso = text(n.curso, "curso", 120, true);
-    if (type === "cadastrarTurma") {
+    if (type === "cadastrarTurma" || type === "excluirTurma")
       n.turma = text(n.turma, "turma", 80, true);
+    if (type === "cadastrarTurma")
       n.sala = text(n.sala ?? "", "sala", 80, false);
-    }
     if (type === "cadastrarAluno" || type === "atualizarAluno") {
       ["nome", "matricula", "curso", "turma"].forEach(
         (k, i) => (n[k] = text(n[k], k, [150, 40, 120, 80][i], true)),
@@ -433,7 +437,7 @@
       };
       writes.push({ table: "Encaminhamentos", row: data });
       audit(type, "Encaminhamentos", data.id);
-    } else if (type === "cadastrarCurso" || type === "cadastrarTurma") {
+    } else if (mutationRight(type) === "manageCatalog") {
       const catalog = academicCatalog(db);
       const sameName = (a, b) =>
         a.toLocaleLowerCase("pt-BR") === b.toLocaleLowerCase("pt-BR");
@@ -442,7 +446,7 @@
           fail("VALIDATION_ERROR", "Já existe um curso com esse nome.");
         data = { nome: p.curso, turmas: [] };
         catalog.push(data);
-      } else {
+      } else if (type === "cadastrarTurma") {
         const course = catalog.find((entry) => entry.nome === p.curso);
         if (!course) fail("VALIDATION_ERROR", "Selecione um curso cadastrado.");
         const exact = course.turmas.find((entry) => entry.nome === p.turma);
@@ -458,6 +462,37 @@
           data = { nome: p.turma, sala: p.sala };
           course.turmas.push(data);
         }
+      } else {
+        const course = catalog.find((entry) => entry.nome === p.curso);
+        const turmaOnly = type === "excluirTurma";
+        const target = turmaOnly
+          ? course?.turmas.find((entry) => entry.nome === p.turma)
+          : course;
+        if (!target)
+          fail(
+            "NOT_FOUND",
+            turmaOnly ? "Turma não encontrada." : "Curso não encontrado.",
+          );
+        if (
+          db.Alunos.some(
+            (a) => a.curso === p.curso && (!turmaOnly || a.turma === p.turma),
+          )
+        )
+          fail(
+            "VALIDATION_ERROR",
+            "Há alunos vinculados, inclusive cadastros inativos. A exclusão está bloqueada.",
+          );
+        if (turmaOnly) {
+          course.turmas = course.turmas.filter((entry) => entry !== target);
+        } else {
+          if (course.turmas.length)
+            fail(
+              "VALIDATION_ERROR",
+              "Exclua as turmas do curso antes de excluir o curso.",
+            );
+          catalog.splice(catalog.indexOf(course), 1);
+        }
+        data = { curso: p.curso, ...(turmaOnly && { turma: p.turma }) };
       }
       writes.push({
         table: "Configuracoes",
@@ -467,7 +502,10 @@
           atualizadoEm: now,
         },
       });
-      audit(type, "Configuracoes", catalogKey);
+      audit(type, "Configuracoes", catalogKey, {
+        curso: p.curso,
+        ...(p.turma && { turma: p.turma }),
+      });
     } else if (type === "cadastrarAluno" || type === "atualizarAluno") {
       let old =
         type === "atualizarAluno" ? find(db, "Alunos", p.alunoId) : null;

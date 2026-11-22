@@ -686,11 +686,11 @@ function catalogPage() {
             ? course.turmas
                 .map(
                   (entry) =>
-                    `<span class="badge">${esc(entry.nome)}${entry.sala ? ` · Sala ${esc(entry.sala)}` : ""}</span>`,
+                    `<div class="catalog-class"><span class="badge">${esc(entry.nome)}${entry.sala ? ` · Sala ${esc(entry.sala)}` : ""}</span><button type="button" class="text-link" data-exclude-course="${esc(course.nome)}" data-exclude-class="${esc(entry.nome)}" aria-label="Excluir turma ${esc(entry.nome)} do curso ${esc(course.nome)}">Excluir turma</button></div>`,
                 )
                 .join(" ")
             : "Nenhuma turma cadastrada"
-        }</td></tr>`,
+        }</td><td><button type="button" class="text-link" data-exclude-course="${esc(course.nome)}" aria-label="Excluir curso ${esc(course.nome)}">Excluir curso</button></td></tr>`,
     )
     .join("");
   $("#content").innerHTML =
@@ -716,7 +716,14 @@ function catalogPage() {
       </div></section>
     </div>
     <section class="panel"><div class="panel-head"><h2>Cursos cadastrados</h2></div>
-    ${rows ? `<table class="responsive-table"><thead><tr><th>Curso</th><th>Turmas e salas</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Cadastre um curso para começar.</div>'}</section>`;
+    ${rows ? `<table class="responsive-table"><thead><tr><th>Curso</th><th>Turmas e salas</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Cadastre um curso para começar.</div>'}</section>`;
+  document.querySelectorAll("[data-exclude-course]").forEach((button) => {
+    button.onclick = () =>
+      excludeCatalogEntry(
+        button.dataset.excludeCourse,
+        button.dataset.excludeClass,
+      );
+  });
   for (const [selector, action, message] of [
     ["#new-course", "cadastrarCurso", "Curso cadastrado."],
     ["#new-class", "cadastrarTurma", "Turma salva."],
@@ -745,6 +752,22 @@ function catalogPage() {
       }
     };
   }
+}
+function excludeCatalogEntry(curso, turma) {
+  const key = uid();
+  const kind = turma ? "turma" : "curso";
+  const name = turma ? `${turma} · ${curso}` : curso;
+  mutationModal(
+    `<h2>Excluir ${kind}</h2><p>Confirme a exclusão de <strong>${esc(name)}</strong> do catálogo.</p>
+    <form>${modalActions("Confirmar exclusão")}</form>`,
+    () =>
+      service.mutate(turma ? "excluirTurma" : "excluirCurso", {
+        curso,
+        ...(turma && { turma }),
+        chaveIdempotencia: key,
+      }),
+    turma ? "Turma excluída." : "Curso excluído.",
+  );
 }
 function studentFields(a) {
   const input = (name, label, max) =>

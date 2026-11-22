@@ -535,6 +535,41 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     closedQueue.itens.some((r) => r.id === id),
     true,
   );
+  const linked = {
+    curso: student.curso,
+    turma: "2A",
+    chaveIdempotencia: "excluir-vinculada",
+  };
+  await api(depe, "excluirTurma", linked, 400);
+  await api(
+    depe,
+    "excluirCurso",
+    { curso: student.curso, chaveIdempotencia: "excluir-curso-vinculado" },
+    400,
+  );
+  const spareCourse = {
+    curso: "Curso sem alunos",
+    chaveIdempotencia: "criar-curso-vazio",
+  };
+  const spareClass = {
+    curso: spareCourse.curso,
+    turma: "Única",
+    chaveIdempotencia: "criar-turma-vazia",
+  };
+  await api(depe, "cadastrarCurso", spareCourse);
+  await api(depe, "cadastrarTurma", spareClass);
+  await api(assist, "excluirTurma", spareClass, 403);
+  await api(admin, "excluirCurso", spareCourse, 403);
+  await api(depe, "excluirCurso", spareCourse, 400);
+  await api(depe, "excluirTurma", spareClass);
+  await api(depe, "excluirCurso", spareCourse);
+  assert.equal(
+    (await api(assist, "carregarDados")).CatalogoAcademico.some(
+      (c) => c.nome === spareCourse.curso,
+    ),
+    false,
+  );
+
   const { db: record } = await repo.read();
   for (const action of ["confirmarLeituraDepe", "concluirEncaminhamento"])
     assert.equal(

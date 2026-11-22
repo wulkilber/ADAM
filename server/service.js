@@ -18,6 +18,8 @@ const mutations = [
   "cadastrarAluno",
   "cadastrarCurso",
   "cadastrarTurma",
+  "excluirCurso",
+  "excluirTurma",
   "atualizarAluno",
   "registrarEncaminhamento",
   "concluirEncaminhamento",
@@ -359,9 +361,8 @@ export class AdamService {
       chaveIdempotencia: p.chaveIdempotencia,
       payloadHash: digest,
       estado: "CONCLUIDA",
-      planoJson: ["cadastrarCurso", "cadastrarTurma"].includes(name)
-        ? "{}"
-        : JSON.stringify(plan),
+      planoJson:
+        I.mutationRight(name) === "manageCatalog" ? "{}" : JSON.stringify(plan),
       resultadoJson: JSON.stringify(plan.data),
       criadoEm: now(),
       atualizadoEm: now(),
