@@ -137,6 +137,72 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     chaveIdempotencia: "aluno-novo",
   };
   await api(assist, "cadastrarAluno", student, 403);
+  await api(depe, "cadastrarAluno", student, 400);
+  await api(
+    assist,
+    "cadastrarCurso",
+    { curso: student.curso, chaveIdempotencia: "curso-assist" },
+    403,
+  );
+  await api(
+    admin,
+    "cadastrarTurma",
+    {
+      curso: student.curso,
+      turma: student.turma,
+      chaveIdempotencia: "turma-admin",
+    },
+    403,
+  );
+  await api(depe, "cadastrarCurso", {
+    curso: student.curso,
+    chaveIdempotencia: "curso-depe",
+  });
+  await api(
+    depe,
+    "cadastrarCurso",
+    { curso: "curso", chaveIdempotencia: "curso-duplicado" },
+    400,
+  );
+  await api(depe, "cadastrarAluno", student, 400);
+  for (const turma of ["1A", "2A"])
+    await api(depe, "cadastrarTurma", {
+      curso: student.curso,
+      turma,
+      sala: "Lab " + turma,
+      chaveIdempotencia: "turma-" + turma,
+    });
+  await api(
+    depe,
+    "cadastrarTurma",
+    {
+      curso: student.curso,
+      turma: "1a",
+      sala: "Outra",
+      chaveIdempotencia: "turma-duplicada",
+    },
+    400,
+  );
+  const catalog = (await api(assist, "carregarDados")).CatalogoAcademico;
+  assert.ok(catalog.some((course) => course.nome === "Informática"));
+  assert.deepEqual(
+    catalog.find((course) => course.nome === student.curso).turmas,
+    [
+      { nome: "1A", sala: "Lab 1A" },
+      { nome: "2A", sala: "Lab 2A" },
+    ],
+  );
+  await api(
+    depe,
+    "cadastrarAluno",
+    {
+      ...student,
+      curso: "Informática",
+      chaveIdempotencia: "turma-outro-curso",
+    },
+    400,
+  );
+
   const enrolled = await api(depe, "cadastrarAluno", student);
   await api(
     depe,

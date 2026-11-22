@@ -60,6 +60,7 @@ let db,
   query = "",
   course = "",
   classroom = "",
+  room = "",
   countFilter = "",
   from = "",
   to = "",
@@ -175,7 +176,9 @@ async function navigate(p, id = "") {
   if (
     passwordLogin &&
     user.perfil === "DEP" &&
-    !["depe", "document", "students", "profile", "reports"].includes(p)
+    !["depe", "document", "students", "profile", "reports", "catalog"].includes(
+      p,
+    )
   )
     return;
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
@@ -186,12 +189,15 @@ async function navigate(p, id = "") {
   query = "";
   course = "";
   classroom = "";
+  room = "";
   countFilter = "";
   pendingKey = null;
   const attempt = ++navigation;
   if (
     passwordLogin &&
-    ["students", "profile", "register", "depe", "reports"].includes(p)
+    ["students", "profile", "register", "depe", "reports", "catalog"].includes(
+      p,
+    )
   ) {
     $("#content").innerHTML = '<p role="status">Atualizando dados…</p>';
     try {
@@ -299,7 +305,15 @@ function enterPortal() {
           ? "depe"
           : "home";
     selected = "";
-    query = course = classroom = countFilter = from = to = typeFilter = "";
+    query =
+      course =
+      classroom =
+      room =
+      countFilter =
+      from =
+      to =
+      typeFilter =
+        "";
     pendingKey = null;
     statusFilter = user.perfil === "DEP" ? "ENCAMINHADO" : "";
   }
@@ -354,6 +368,7 @@ function render() {
       : []),
     ["home", "Início"],
     ["students", "Alunos"],
+    ...(can("manageCatalog") ? [["catalog", "Cursos e turmas"]] : []),
     ["register", "Registrar ocorrência"],
     ["depe", "Encaminhamentos ao DEPE"],
     ["reports", "Relatórios"],
@@ -363,7 +378,7 @@ function render() {
       accountOnly
         ? p === "admin"
         : depeOnly
-          ? ["depe", "students", "reports"].includes(p)
+          ? ["depe", "students", "reports", "catalog"].includes(p)
           : p !== "register" || can("register"),
     )
     .map(([p, label]) => {
@@ -451,6 +466,7 @@ function render() {
       admin,
       home,
       students,
+      catalog: catalogPage,
       register,
       depe,
       reports,
@@ -489,6 +505,7 @@ function filteredOccurrences(day = (date) => date.slice(0, 10)) {
       (!to || day(o.dataHoraAbordagem) <= to) &&
       (!course || student(o.alunoId).curso === course) &&
       (!classroom || student(o.alunoId).turma === classroom) &&
+      (!room || roomFor(student(o.alunoId)) === room) &&
       (!typeFilter || JSON.parse(o.irregularidadesJson).includes(typeFilter)),
   ).sort(
     (a, b) =>
@@ -545,17 +562,50 @@ function home() {
     }<div style="padding:12px 20px"><button class="text-link" onclick="navigate('depe')">Acessar encaminhamentos ${icon("arrow")}</button></div></section><div class="note"><strong>Uma abordagem, um registro.</strong><br>Mesmo com mais de uma irregularidade, a abordagem conta como uma única ocorrência.</div></div></div>`;
   dateEvents(home);
 }
-function options(field, value) {
+const courseCatalog = () => db.CatalogoAcademico || [];
+const classesFor = (name) =>
+  courseCatalog().find((entry) => entry.nome === name)?.turmas || [];
+const roomFor = (student) =>
+  classesFor(student?.curso).find((entry) => entry.nome === student?.turma)
+    ?.sala || "";
+function optionList(values, value, placeholder) {
+  const sorted = [...new Set(values.filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "pt-BR"),
+  );
   return (
-    `<option value="">${field === "curso" ? "Todos os cursos" : "Todas as turmas"}</option>` +
-    [...new Set(db.Alunos.map((a) => a[field]))]
-      .sort()
-      .map((v) => `<option ${v === value ? "selected" : ""}>${esc(v)}</option>`)
+    `<option value="">${placeholder}</option>` +
+    sorted
+      .map(
+        (v) =>
+          `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(v)}</option>`,
+      )
       .join("")
   );
 }
+function options(field, value) {
+  const courses = courseCatalog();
+  const classes = courses.flatMap((entry) => entry.turmas);
+  const values =
+    field === "sala"
+      ? classes.map((entry) => entry.sala)
+      : [
+          ...db.Alunos.map((a) => a[field]),
+          ...(field === "curso" ? courses : classes).map((entry) => entry.nome),
+        ];
+  const placeholders = {
+    curso: "Todos os cursos",
+    turma: "Todas as turmas",
+    sala: "Todas as salas",
+  };
+  return optionList(values, value, placeholders[field]);
+}
+function roomFilter() {
+  return db.CatalogoAcademico
+    ? `<select id="room" aria-label="Sala">${options("sala", room)}</select>`
+    : "";
+}
 function filters(extra = "") {
-  return `<div class="filterbar"><input id="search" placeholder="Buscar por nome ou matrícula" aria-label="Buscar aluno" value="${esc(query)}"><select id="course" aria-label="Curso">${options("curso", course)}</select><select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>${extra}</div>`;
+  return `<div class="filterbar"><input id="search" placeholder="Buscar por nome ou matrícula" aria-label="Buscar aluno" value="${esc(query)}"><select id="course" aria-label="Curso">${options("curso", course)}</select><select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>${roomFilter()}${extra}</div>`;
 }
 function filterEvents(fn) {
   $("#search").oninput = (e) => {
@@ -570,6 +620,10 @@ function filterEvents(fn) {
     classroom = e.target.value;
     fn();
   };
+  $("#room")?.addEventListener("change", (e) => {
+    room = e.target.value;
+    fn();
+  });
 }
 function matches(a) {
   return (
@@ -577,7 +631,8 @@ function matches(a) {
       .toLocaleLowerCase("pt-BR")
       .includes(query.toLocaleLowerCase("pt-BR")) &&
     (!course || a.curso === course) &&
-    (!classroom || a.turma === classroom)
+    (!classroom || a.turma === classroom) &&
+    (!room || roomFor(a) === room)
   );
 }
 function students(only = false) {
@@ -585,7 +640,7 @@ function students(only = false) {
     (a) => matches(a) && (!countFilter || annual(a.id).length === +countFilter),
   );
   const body = list.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno / matrícula</th><th>Curso</th><th>Turma</th><th>Ocorrências em ${year}</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${person(a)}${a.ativo ? "" : '<span class="badge warn">Inativo</span>'}</td><td data-label="Curso">${esc(a.curso)}</td><td data-label="Turma">${esc(a.turma)}</td><td data-label="Ocorrências"><span class="badge ${annual(a.id).length >= 3 ? "red" : annual(a.id).length === 2 ? "warn" : "green"}">${annual(a.id).length} de 3</span></td><td><button class="text-link" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
+    ? `<table class="responsive-table"><thead><tr><th>Aluno / matrícula</th><th>Curso</th><th>Turma</th><th>Ocorrências em ${year}</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${person(a)}${a.ativo ? "" : '<span class="badge warn">Inativo</span>'}</td><td data-label="Curso">${esc(a.curso)}</td><td data-label="Turma">${esc(a.turma)}${roomFor(a) ? `<small class="class-room">${esc(roomFor(a))}</small>` : ""}</td><td data-label="Ocorrências"><span class="badge ${annual(a.id).length >= 3 ? "red" : annual(a.id).length === 2 ? "warn" : "green"}">${annual(a.id).length} de 3</span></td><td><button class="text-link" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">${db.Alunos.length ? "Nenhum aluno encontrado. Tente outros filtros." : "Ainda não há alunos cadastrados."}</div>`;
   if (only) {
     $("#student-results").innerHTML = body;
@@ -620,11 +675,101 @@ function modal(html, onSubmit) {
   );
   if (onSubmit) m.querySelector("form").onsubmit = onSubmit;
 }
+function catalogPage() {
+  if (!can("manageCatalog")) return;
+  const courses = courseCatalog();
+  const rows = courses
+    .map(
+      (course) =>
+        `<tr><td>${esc(course.nome)}</td><td data-label="Turmas">${
+          course.turmas.length
+            ? course.turmas
+                .map(
+                  (entry) =>
+                    `<span class="badge">${esc(entry.nome)}${entry.sala ? ` · Sala ${esc(entry.sala)}` : ""}</span>`,
+                )
+                .join(" ")
+            : "Nenhuma turma cadastrada"
+        }</td></tr>`,
+    )
+    .join("");
+  $("#content").innerHTML =
+    heading(
+      "CADASTRO ACADÊMICO",
+      "Cursos e turmas",
+      "Organize as opções usadas no cadastro de alunos.",
+    ) +
+    `<div class="grid">
+      <section class="panel"><div class="panel-head"><h2>Novo curso</h2></div><div class="panel-body">
+        <form id="new-course"><label class="field">Nome do curso<input name="curso" required maxlength="120"></label>
+        <div class="catalog-feedback" role="alert"></div><button class="primary">Cadastrar curso</button></form>
+      </div></section>
+      <section class="panel"><div class="panel-head"><h2>Nova turma</h2></div><div class="panel-body">
+        <form id="new-class"><label class="field">Curso<select name="curso" aria-label="Curso" required>${optionList(
+          courses.map((c) => c.nome),
+          "",
+          "Selecione um curso",
+        )}</select></label>
+        <label class="field">Nome da turma<input name="turma" required maxlength="80"></label>
+        <label class="field">Sala (opcional)<input name="sala" maxlength="80"></label>
+        <div class="catalog-feedback" role="alert"></div><button class="primary" ${courses.length ? "" : "disabled"}>Cadastrar turma</button></form>
+      </div></section>
+    </div>
+    <section class="panel"><div class="panel-head"><h2>Cursos cadastrados</h2></div>
+    ${rows ? `<table class="responsive-table"><thead><tr><th>Curso</th><th>Turmas e salas</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Cadastre um curso para começar.</div>'}</section>`;
+  for (const [selector, action, message] of [
+    ["#new-course", "cadastrarCurso", "Curso cadastrado."],
+    ["#new-class", "cadastrarTurma", "Turma salva."],
+  ]) {
+    const form = $(selector);
+    let key = uid();
+    form.oninput = () => {
+      key = uid();
+    };
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector(".primary");
+      button.disabled = true;
+      try {
+        await service.mutate(action, {
+          ...Object.fromEntries(new FormData(form)),
+          chaveIdempotencia: key,
+        });
+        await service.refresh();
+        if (page === "catalog") catalogPage();
+        toast(message);
+      } catch (error) {
+        form.querySelector(".catalog-feedback").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    };
+  }
+}
+function studentFields(a) {
+  const input = (name, label, max) =>
+    `<label class="field">${label}<input name="${name}" required maxlength="${max}" value="${esc(a?.[name])}"></label>`;
+  const identity =
+    input("nome", "Nome completo", 150) + input("matricula", "Matrícula", 40);
+  if (!db.CatalogoAcademico)
+    return (
+      identity + input("curso", "Curso", 120) + input("turma", "Turma", 80)
+    );
+  return (
+    identity +
+    `<label class="field">Curso<select name="curso" aria-label="Curso" required>${optionList(
+      courseCatalog().map((c) => c.nome),
+      a?.curso,
+      "Selecione um curso",
+    )}</select></label>
+    <label class="field">Turma<select name="turma" aria-label="Turma" required></select></label>`
+  );
+}
 function studentModal(a) {
   if (!can(a ? "student" : "createStudent")) return;
   const key = uid();
   modal(
-    `<h2>${a ? "Editar cadastro" : "Cadastrar aluno"}</h2><p>${demoMode ? "Use somente dados fictícios nesta demonstração." : ""}</p><form><div class="form-grid">${["nome", "matricula", "curso", "turma"].map((k, i) => `<label class="field">${["Nome completo", "Matrícula", "Curso", "Turma"][i]}<input name="${k}" required maxlength="${[150, 40, 120, 80][i]}" value="${esc(a?.[k] || "")}"></label>`).join("")}</div><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Salvar cadastro</button></div></form>`,
+    `<h2>${a ? "Editar cadastro" : "Cadastrar aluno"}</h2><p>${demoMode ? "Use somente dados fictícios nesta demonstração." : ""}</p><form><div class="form-grid">${studentFields(a)}</div>${db.CatalogoAcademico ? '<p class="selected-room" aria-live="polite"></p>' : ""}<div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Salvar cadastro</button></div></form>`,
     async (e) => {
       e.preventDefault();
       const b = e.target.querySelector("button.primary");
@@ -649,6 +794,33 @@ function studentModal(a) {
       }
     },
   );
+  if (!db.CatalogoAcademico) return;
+  const form = $("#modal form");
+  const { curso, turma } = form.elements;
+  const roomLabel = form.querySelector(".selected-room");
+  const showRoom = () => {
+    const sala = roomFor({ curso: curso.value, turma: turma.value });
+    roomLabel.textContent = sala
+      ? `Sala: ${sala}`
+      : turma.value
+        ? "Sala não informada"
+        : "";
+  };
+  const fillClasses = (selectedClass = "") => {
+    const classes = classesFor(curso.value);
+    turma.innerHTML = optionList(
+      classes.map((entry) => entry.nome),
+      selectedClass,
+      curso.value && !classes.length
+        ? "Nenhuma turma cadastrada"
+        : "Selecione uma turma",
+    );
+    form.querySelector(".primary").disabled = !classes.length;
+    showRoom();
+  };
+  curso.onchange = () => fillClasses();
+  turma.onchange = showRoom;
+  fillClasses(a?.turma);
 }
 function historyHTML(os, editable = false) {
   return `<div class="timeline">${
@@ -699,7 +871,7 @@ function profile() {
     heading(
       "HISTÓRICO DO ALUNO",
       esc(a.nome),
-      `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)} · ${a.ativo ? "Ativo" : "Inativo"}`,
+      `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)}${roomFor(a) ? ` · Sala ${esc(roomFor(a))}` : ""} · ${a.ativo ? "Ativo" : "Inativo"}`,
       `<button onclick="navigate('students')">Voltar para alunos</button>`,
     ) +
     `<div class="grid">
@@ -1172,6 +1344,7 @@ function reports() {
           +e.anoLetivo === year &&
           (!course || cadastro?.curso === course) &&
           (!classroom || cadastro?.turma === classroom) &&
+          (!room || roomFor(cadastro) === room) &&
           (!from || day(e.criadoEm) >= from) &&
           (!to || day(e.criadoEm) <= to)
         );
@@ -1220,6 +1393,7 @@ function reports() {
             r.anoLetivo === year &&
             (!course || r.curso === course) &&
             (!classroom || r.turma === classroom) &&
+            (!room || roomFor(r) === room) &&
             (!(from || to) || r.dia) &&
             (!from || r.dia >= from) &&
             (!to || r.dia <= to),
@@ -1247,7 +1421,7 @@ function reports() {
   const pageCount = Math.max(1, Math.ceil(os.length / pageSize));
   reportPage = Math.min(reportPage, pageCount);
   const start = (reportPage - 1) * pageSize;
-  const hasFilters = from || to || course || classroom || typeFilter;
+  const hasFilters = from || to || course || classroom || room || typeFilter;
   const exportable = !periodInvalid && (os.length || referralTotal);
   $("#content").innerHTML =
     heading(
@@ -1261,6 +1435,7 @@ function reports() {
       <label class="field">Até<input type="date" id="to" value="${to}"></label>
       <select id="course" aria-label="Curso">${options("curso", course)}</select>
       <select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>
+      ${roomFilter()}
       <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${availableTypes()
         .map(
           (t) =>
@@ -1280,7 +1455,7 @@ function reports() {
       <section class="panel"><div class="panel-head"><h2>Abordagens por curso</h2></div>
         <div class="panel-body">${byCourse.length ? reportBreakdown(byCourse) : '<p class="empty">Sem abordagens para comparar.</p>'}</div></section>
       <section class="panel"><div class="panel-head"><h2>Situação dos encaminhamentos</h2></div>
-        <div class="panel-body">${reportBreakdown(byState)}<p>Considera ano, período, curso e turma. O filtro de tipo vale para as abordagens.</p></div></section>
+        <div class="panel-body">${reportBreakdown(byState)}<p>Considera ano, período, curso, turma e sala. O filtro de tipo vale para as abordagens.</p></div></section>
     </div>
     ${
       user.perfil === "DEP" && passwordLogin
@@ -1307,12 +1482,16 @@ function reports() {
     classroom = e.target.value;
     applyFilters();
   };
+  $("#room")?.addEventListener("change", (e) => {
+    room = e.target.value;
+    applyFilters();
+  });
   $("#type").onchange = (e) => {
     typeFilter = e.target.value;
     applyFilters();
   };
   $("#clear-report-filters").onclick = () => {
-    from = to = course = classroom = typeFilter = "";
+    from = to = course = classroom = room = typeFilter = "";
     applyFilters();
   };
   for (const [selector, step] of [
@@ -1339,6 +1518,7 @@ function reports() {
         ["Filtros", "Data final", to || "Sem limite"],
         ["Filtros", "Curso", course || "Todos"],
         ["Filtros", "Turma", classroom || "Todas"],
+        ...(db.CatalogoAcademico ? [["Filtros", "Sala", room || "Todas"]] : []),
         ["Filtros", "Tipo de ocorrência", labels[typeFilter] || "Todos"],
         ...totals.map(([count, label]) => ["Resumo", label, count]),
         ...months.map(([month, count]) => ["Abordagens por mês", month, count]),

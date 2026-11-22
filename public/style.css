@@ -1187,3 +1187,14 @@ dialog::backdrop {
 .student-referral .actions {
   justify-content: flex-start;
 }
+
+.class-room {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.catalog-feedback:not(:empty) {
+  margin-bottom: 12px;
+  color: var(--error-ink);
+}

@@ -28,22 +28,52 @@ test("DEPE gerencia alunos e casos e o assistente edita o histórico", async ({
   try {
     await signIn(assist, "assistente", "Tudo em dia, por aqui.");
     await signIn(depe, "depe", "Fila do DEPE");
+    await expect(
+      assist.locator("nav").getByText("Cursos e turmas"),
+    ).toHaveCount(0);
+    await nav(depe, "Cursos e turmas");
+    await depe.getByLabel("Nome do curso").fill("Curso piloto");
+    await depe.getByRole("button", { name: "Cadastrar curso" }).click();
+    await expect(depe.getByRole("row", { name: /Curso piloto/ })).toContainText(
+      "Nenhuma turma",
+    );
+    for (const [turma, sala] of [
+      ["1A", "Lab 11"],
+      ["2A", "Lab 22"],
+      ["3A", "Lab vazio"],
+    ]) {
+      await depe
+        .getByLabel("Curso", { exact: true })
+        .selectOption("Curso piloto");
+      await depe.getByLabel("Nome da turma").fill(turma);
+      await depe.getByLabel("Sala (opcional)").fill(sala);
+      await depe.getByRole("button", { name: "Cadastrar turma" }).click();
+      await expect(
+        depe.getByRole("row", { name: /Curso piloto/ }),
+      ).toContainText(sala);
+    }
+
     await nav(depe, "Alunos");
     await depe.getByRole("button", { name: "Cadastrar aluno" }).click();
     const dialog = depe.getByRole("dialog");
     for (const [field, value] of Object.entries({
       "Nome completo": "Estudante fictício DEPE",
       Matrícula: "QA-2026",
-      Curso: "Curso piloto",
-      Turma: "1A",
     }))
       await dialog.getByLabel(field, { exact: true }).fill(value);
+    await dialog
+      .getByLabel("Curso", { exact: true })
+      .selectOption("Curso piloto");
+    await dialog.getByLabel("Turma", { exact: true }).selectOption("1A");
+    await expect(dialog).toContainText("Sala: Lab 11");
+    await expect(dialog.locator("input")).toHaveCount(2);
+
     await dialog.getByRole("button", { name: "Salvar cadastro" }).click();
     await expect(dialog).toBeHidden();
     await depe.getByLabel("Buscar aluno").fill("QA-2026");
     await student(depe, /Estudante fictício DEPE/);
     await depe.getByRole("button", { name: "Editar cadastro" }).click();
-    await dialog.getByLabel("Turma", { exact: true }).fill("2A");
+    await dialog.getByLabel("Turma", { exact: true }).selectOption("2A");
     await dialog.getByRole("button", { name: "Salvar cadastro" }).click();
     await expect(depe.locator(".title-row")).toContainText("2A");
 
@@ -54,6 +84,16 @@ test("DEPE gerencia alunos e casos e o assistente edita o histórico", async ({
     await expect(
       assist.getByRole("button", { name: "Cadastrar aluno" }),
     ).toHaveCount(0);
+    await expect(assist.locator('#classroom option[value="3A"]')).toHaveCount(
+      1,
+    );
+    await assist.getByLabel("Sala", { exact: true }).selectOption("Lab vazio");
+    await expect(assist.getByText(/Nenhum aluno encontrado/)).toBeVisible();
+    await assist.getByLabel("Sala", { exact: true }).selectOption("Lab 22");
+    await expect(
+      assist.getByRole("row", { name: /Estudante fictício DEPE/ }),
+    ).toBeVisible();
+    await assist.getByLabel("Sala", { exact: true }).selectOption("");
     await student(assist, /Ana Clara Oliveira/);
     await expect(
       assist.getByRole("heading", { name: "Ana Clara Oliveira" }),

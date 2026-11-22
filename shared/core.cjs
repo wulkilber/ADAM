@@ -48,6 +48,7 @@
       "createStudent",
       "student",
       "deactivateStudent",
+      "manageCatalog",
       "confirmReading",
       "complete",
     ],
@@ -56,6 +57,8 @@
     registrarOcorrencia: "register",
     editarOcorrencia: "editOccurrence",
     desativarAluno: "deactivateStudent",
+    cadastrarCurso: "manageCatalog",
+    cadastrarTurma: "manageCatalog",
     confirmarLeituraDepe: "confirmReading",
     concluirEncaminhamento: "complete",
     registrarEncaminhamento: "send",
@@ -105,6 +108,25 @@
     if (!x) fail("NOT_FOUND", "Registro não encontrado.");
     return x;
   }
+  const catalogKey = "catalogoAcademico";
+  function academicCatalog(db) {
+    const saved = db.Configuracoes.find((row) => row.chave === catalogKey);
+    const courses = new Map(
+      (saved ? JSON.parse(saved.valor) : []).map((course) => [
+        course.nome,
+        course,
+      ]),
+    );
+    for (const { curso, turma } of db.Alunos) {
+      if (!curso) continue;
+      if (!courses.has(curso)) courses.set(curso, { nome: curso, turmas: [] });
+      const classes = courses.get(curso).turmas;
+      if (turma && !classes.some((entry) => entry.nome === turma))
+        classes.push({ nome: turma, sala: "" });
+    }
+    return [...courses.values()];
+  }
+
   function normalize(type, p) {
     const fields = {
       registrarOcorrencia: [
@@ -123,6 +145,8 @@
         "versaoEsperada",
         "chaveIdempotencia",
       ],
+      cadastrarCurso: ["curso", "chaveIdempotencia"],
+      cadastrarTurma: ["curso", "turma", "sala", "chaveIdempotencia"],
       desativarAluno: ["alunoId", "versaoEsperada", "chaveIdempotencia"],
       confirmarLeituraDepe: ["id", "chaveIdempotencia"],
       cadastrarAluno: [
@@ -198,6 +222,12 @@
         delete n.tituloPersonalizado;
       }
       n.observacao = text(n.observacao ?? "", "observação", 2000, false);
+    }
+    if (type === "cadastrarCurso" || type === "cadastrarTurma")
+      n.curso = text(n.curso, "curso", 120, true);
+    if (type === "cadastrarTurma") {
+      n.turma = text(n.turma, "turma", 80, true);
+      n.sala = text(n.sala ?? "", "sala", 80, false);
     }
     if (type === "cadastrarAluno" || type === "atualizarAluno") {
       ["nome", "matricula", "curso", "turma"].forEach(
@@ -403,9 +433,54 @@
       };
       writes.push({ table: "Encaminhamentos", row: data });
       audit(type, "Encaminhamentos", data.id);
+    } else if (type === "cadastrarCurso" || type === "cadastrarTurma") {
+      const catalog = academicCatalog(db);
+      const sameName = (a, b) =>
+        a.toLocaleLowerCase("pt-BR") === b.toLocaleLowerCase("pt-BR");
+      if (type === "cadastrarCurso") {
+        if (catalog.some((entry) => sameName(entry.nome, p.curso)))
+          fail("VALIDATION_ERROR", "Já existe um curso com esse nome.");
+        data = { nome: p.curso, turmas: [] };
+        catalog.push(data);
+      } else {
+        const course = catalog.find((entry) => entry.nome === p.curso);
+        if (!course) fail("VALIDATION_ERROR", "Selecione um curso cadastrado.");
+        const exact = course.turmas.find((entry) => entry.nome === p.turma);
+        if (exact && !exact.sala && p.sala) {
+          exact.sala = p.sala;
+          data = exact;
+        } else {
+          if (course.turmas.some((entry) => sameName(entry.nome, p.turma)))
+            fail(
+              "VALIDATION_ERROR",
+              "Já existe uma turma com esse nome nesse curso.",
+            );
+          data = { nome: p.turma, sala: p.sala };
+          course.turmas.push(data);
+        }
+      }
+      writes.push({
+        table: "Configuracoes",
+        row: {
+          chave: catalogKey,
+          valor: JSON.stringify(catalog),
+          atualizadoEm: now,
+        },
+      });
+      audit(type, "Configuracoes", catalogKey);
     } else if (type === "cadastrarAluno" || type === "atualizarAluno") {
       let old =
         type === "atualizarAluno" ? find(db, "Alunos", p.alunoId) : null;
+      if (
+        env.rights === PORTAL_RIGHTS &&
+        !academicCatalog(db)
+          .find((course) => course.nome === p.curso)
+          ?.turmas.some((entry) => entry.nome === p.turma)
+      )
+        fail(
+          "VALIDATION_ERROR",
+          "Selecione uma turma cadastrada para o curso escolhido.",
+        );
       if (old && old.versao !== p.versaoEsperada)
         fail("VERSION_CONFLICT", "O cadastro mudou. Atualize a tela.");
       if (
@@ -478,6 +553,7 @@
   root.IFAM = {
     TYPES,
     CUSTOM_TITLE_MAX,
+    academicCatalog,
     CAMPUS_NAME,
     typeLabels,
     describeType,

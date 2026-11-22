@@ -16,6 +16,8 @@ const mutations = [
   "desativarAluno",
   "confirmarLeituraDepe",
   "cadastrarAluno",
+  "cadastrarCurso",
+  "cadastrarTurma",
   "atualizarAluno",
   "registrarEncaminhamento",
   "concluirEncaminhamento",
@@ -357,7 +359,9 @@ export class AdamService {
       chaveIdempotencia: p.chaveIdempotencia,
       payloadHash: digest,
       estado: "CONCLUIDA",
-      planoJson: JSON.stringify(plan),
+      planoJson: ["cadastrarCurso", "cadastrarTurma"].includes(name)
+        ? "{}"
+        : JSON.stringify(plan),
       resultadoJson: JSON.stringify(plan.data),
       criadoEm: now(),
       atualizadoEm: now(),
@@ -442,6 +446,7 @@ export class AdamService {
           Ocorrencias: db.Ocorrencias,
           Encaminhamentos: db.Encaminhamentos,
           AnosLetivos: db.AnosLetivos,
+          ...(this.repo.atomic && { CatalogoAcademico: I.academicCatalog(db) }),
         };
       case "listarAnosLetivos":
         return db.AnosLetivos;
