@@ -153,23 +153,22 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     "atualizarAluno",
     {
       ...student,
-      alunoId: "inexistente",
+      nome: "Tentativa sem permissão",
+      alunoId: enrolled.id,
       versaoEsperada: 1,
-      chaveIdempotencia: "edit-inexistente",
+      chaveIdempotencia: "edit-assistente",
     },
-    404,
+    403,
   );
-  await api(assist, "atualizarAluno", {
-    ...student,
-    alunoId: enrolled.id,
-    versaoEsperada: 1,
-    chaveIdempotencia: "edit-real",
-  });
+  assert.equal(
+    (await api(assist, "obterAluno", { alunoId: enrolled.id })).nome,
+    student.nome,
+  );
   const depeEdit = await api(depe, "atualizarAluno", {
     ...student,
     turma: "2A",
     alunoId: enrolled.id,
-    versaoEsperada: 2,
+    versaoEsperada: 1,
     chaveIdempotencia: "depe-edit",
   });
   assert.equal(

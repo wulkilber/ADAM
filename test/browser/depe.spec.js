@@ -55,6 +55,15 @@ test("DEPE gerencia alunos e casos e o assistente edita o histórico", async ({
       assist.getByRole("button", { name: "Cadastrar aluno" }),
     ).toHaveCount(0);
     await student(assist, /Ana Clara Oliveira/);
+    await expect(
+      assist.getByRole("heading", { name: "Ana Clara Oliveira" }),
+    ).toBeVisible();
+    await expect(
+      assist.getByRole("button", { name: "Editar cadastro" }),
+    ).toHaveCount(0);
+    await expect(
+      assist.getByRole("button", { name: "Desativar aluno" }),
+    ).toHaveCount(0);
     const assistDialog = assist.getByRole("dialog");
     await assist
       .locator(".timeline article")

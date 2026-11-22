@@ -38,7 +38,6 @@
       "report",
       "register",
       "editOccurrence",
-      "student",
       "send",
     ],
     DEP: [
