@@ -17,6 +17,37 @@ const mutations = [
   "registrarEncaminhamento",
   "concluirEncaminhamento",
 ];
+const portalReadRights = {
+  carregarDados: "portalData",
+  listarAnosLetivos: "portalData",
+  obterAluno: "read",
+  listarAlunos: "read",
+  listarOcorrencias: "read",
+  obterResumo: "read",
+  listarEncaminhamentos: "referrals",
+  obterEncaminhamento: "referrals",
+  obterDadosDocumento: "report",
+  gerarPdfEncaminhamento: "report",
+  listarContas: "manageAccounts",
+  alterarConta: "manageAccounts",
+  confirmarLeituraDepe: "confirmReading",
+};
+function depeView(db) {
+  const Encaminhamentos = db.Encaminhamentos.filter((r) =>
+    ["ENCAMINHADO", "CONCLUIDO"].includes(r.status),
+  );
+  const studentIds = new Set(Encaminhamentos.map((r) => r.alunoId));
+  const Alunos = db.Alunos.filter((a) => studentIds.has(a.id)).map(
+    ({ id, nome, matricula, curso, turma }) => ({
+      id,
+      nome,
+      matricula,
+      curso,
+      turma,
+    }),
+  );
+  return { ...db, Encaminhamentos, Alunos, Ocorrencias: [], Usuarios: [] };
+}
 const hash = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const now = () => new Date().toISOString();
@@ -195,116 +226,50 @@ export class AdamService {
       }
       if (this.repo.atomic && user.trocaSenha && name !== "obterSessao")
         fault("FORBIDDEN", "Troque a senha temporária.", 403);
-      if (this.repo.atomic && name === "confirmarLeituraDepe") {
-        if (user.perfil !== "DEP")
-          fault("FORBIDDEN", "Somente o DEPE pode confirmar leitura.", 403);
-        I.keys(input, ["id"]);
-        const referral = I.find(db, "Encaminhamentos", input.id);
-        if (!["ENCAMINHADO", "CONCLUIDO"].includes(referral.status))
-          fault("NOT_FOUND", "Caso ainda não encaminhado.", 404);
-        if (referral.lidoEm) return { lidoEm: referral.lidoEm };
-        const lidoEm = now();
-        await this.repo.commit(
-          await this.repo.prepare(snapshot, [
-            {
-              table: "Encaminhamentos",
-              row: {
-                ...referral,
-                lidoEm,
-                lidoPor: user.id,
-                lidoPorNome: user.nome,
-              },
-            },
-          ]),
-        );
-        return { lidoEm };
+      if (this.repo.atomic) {
+        if (name === "cadastrarConta")
+          return this.createAccount(snapshot, db, user, input);
+        if (mutations.includes(name))
+          return this.mutate(snapshot, db, user, name, input);
+        if (Object.hasOwn(portalReadRights, name))
+          I.allow(user, portalReadRights[name], I.PORTAL_RIGHTS);
+        else if (name !== "obterSessao")
+          fault("NOT_FOUND", "Operação não encontrada.", 404);
+        const scoped =
+          user.perfil === "DEP" && name !== "obterSessao" ? depeView(db) : db;
+        return this.readOperation(snapshot, scoped, user, name, input);
       }
-      if (this.repo.atomic && user.perfil === "DEP") {
-        db.Encaminhamentos = db.Encaminhamentos.filter((r) =>
-          ["ENCAMINHADO", "CONCLUIDO"].includes(r.status),
-        );
-        const students = new Set(db.Encaminhamentos.map((r) => r.alunoId));
-        const occurrences = new Set(
-          db.Encaminhamentos.flatMap((r) => JSON.parse(r.ocorrenciaIdsJson)),
-        );
-        db.Alunos = db.Alunos.filter((r) => students.has(r.id));
-        db.Ocorrencias = db.Ocorrencias.filter((r) => occurrences.has(r.id));
-      }
-      if (
-        this.repo.atomic &&
-        ["listarContas", "cadastrarConta", "alterarConta"].includes(name)
-      )
-        return this.account(snapshot, db, user, name, input);
       if (mutations.includes(name))
         return this.mutate(snapshot, db, user, name, input);
       return this.readOperation(snapshot, db, user, name, input);
     });
   }
-  async account(snapshot, db, actor, name, p) {
-    I.allow(actor, "admin");
-    const view = ({ id, nome, usuario, perfil, ativo }) => ({
-      id,
-      nome,
-      usuario,
-      perfil,
-      ativo,
-    });
-    if (name === "listarContas") {
-      I.keys(p, []);
-      return db.Usuarios.map(view);
-    }
-    const create = name === "cadastrarConta";
-    I.keys(
-      p,
-      create
-        ? ["nome", "usuario", "senha", "perfil"]
-        : ["id", "senha", "perfil", "ativo"],
-    );
-    if (!["ADMIN", "DEP", "ASSISTENTE"].includes(p.perfil))
+  async createAccount(snapshot, db, actor, p) {
+    I.allow(actor, "createAccount", I.PORTAL_RIGHTS);
+    I.keys(p, ["nome", "usuario", "senha", "perfil"]);
+    if (
+      typeof p.perfil !== "string" ||
+      !Object.hasOwn(I.PORTAL_RIGHTS, p.perfil)
+    )
       fault("VALIDATION_ERROR", "Selecione um perfil.");
-    let account;
-    if (create) {
-      const usuario = validateUsername(p.usuario);
-      if (db.Usuarios.some((u) => u.usuario === usuario))
-        fault("VALIDATION_ERROR", "Usuário já cadastrado.", 409);
-      account = {
-        id: this.uuid(),
-        nome: I.text(p.nome, "nome", 120, true),
-        usuario,
-        email: "",
-        perfil: p.perfil,
-        ativo: true,
-        credentials: await passwordRecord(p.senha),
-        trocaSenha: true,
-      };
-    } else {
-      const old = I.find(db, "Usuarios", p.id);
-      if (typeof p.ativo !== "boolean")
-        fault("VALIDATION_ERROR", "Informe a situação da conta.");
-      const credentials = p.senha
-        ? await passwordRecord(p.senha)
-        : { ...old.credentials, revision: this.uuid() };
-      account = {
-        ...old,
-        perfil: p.perfil,
-        ativo: p.ativo,
-        credentials,
-        trocaSenha: Boolean(p.senha || old.trocaSenha),
-      };
-      if (
-        old.perfil === "ADMIN" &&
-        (p.perfil !== "ADMIN" || !p.ativo) &&
-        !db.Usuarios.some(
-          (u) => u.id !== old.id && u.ativo && u.perfil === "ADMIN",
-        )
-      )
-        fault("VALIDATION_ERROR", "Mantenha um administrador ativo.", 409);
-    }
+    const usuario = validateUsername(p.usuario);
+    if (db.Usuarios.some((u) => u.usuario === usuario))
+      fault("VALIDATION_ERROR", "Usuário já cadastrado.", 409);
+    const account = {
+      id: this.uuid(),
+      nome: I.text(p.nome, "nome", 120, true),
+      usuario,
+      email: "",
+      perfil: p.perfil,
+      ativo: true,
+      credentials: await passwordRecord(p.senha),
+      trocaSenha: true,
+    };
     const audit = {
       id: this.uuid(),
       operacaoId: this.uuid(),
       usuarioId: actor.id,
-      acao: name,
+      acao: "cadastrarConta",
       entidade: "Usuarios",
       entidadeId: account.id,
       dataHora: now(),
@@ -319,24 +284,17 @@ export class AdamService {
         { table: "Auditoria", row: audit },
       ]),
     );
-    return view(account);
+    return {
+      id: account.id,
+      nome: account.nome,
+      usuario,
+      perfil: account.perfil,
+      ativo: true,
+    };
   }
   async mutate(snapshot, db, user, name, input) {
-    const right =
-      name === "registrarOcorrencia"
-        ? "register"
-        : name === "registrarEncaminhamento"
-          ? "send"
-          : name === "concluirEncaminhamento"
-            ? "complete"
-            : "student";
-    if (
-      this.repo.atomic &&
-      ((name === "concluirEncaminhamento" && user.perfil !== "DEP") ||
-        (name === "registrarEncaminhamento" && user.perfil === "DEP"))
-    )
-      fault("FORBIDDEN", "Perfil sem permissão para esta ação.", 403);
-    I.allow(user, right);
+    const rights = this.repo.atomic ? I.PORTAL_RIGHTS : I.RIGHTS;
+    I.allow(user, I.mutationRight(name), rights);
     const p = I.normalize(name, input),
       digest = hash(p);
     const old = db.Operacoes.find(
@@ -354,14 +312,11 @@ export class AdamService {
         );
       return JSON.parse(old.resultadoJson);
     }
-    if (this.repo.atomic && name === "concluirEncaminhamento") {
-      const referral = I.find(db, "Encaminhamentos", p.id);
-      if (referral.status === "CONCLUIDO") return referral;
-    }
     const plan = I.plan(db, user, name, p, {
       uuid: this.uuid,
       now,
       policy: settings(db).politicaAposLimite,
+      rights,
     });
     const op = {
       id: plan.id,
@@ -431,7 +386,8 @@ export class AdamService {
       "encaminhamentoId",
     ])
       if (p[k] !== undefined) I.text(p[k], k, 200, false);
-    const cfg = settings(db);
+    const cfg =
+      this.repo.atomic && user.perfil === "ADMIN" ? null : settings(db);
     switch (name) {
       case "obterSessao":
         return {
@@ -442,7 +398,9 @@ export class AdamService {
             ativo: user.ativo,
             trocaSenha: Boolean(user.trocaSenha),
           },
-          permissoes: I.RIGHTS[user.perfil],
+          permissoes: (this.repo.atomic ? I.PORTAL_RIGHTS : I.RIGHTS)[
+            user.perfil
+          ],
           configuracoes: cfg,
         };
       case "carregarDados":

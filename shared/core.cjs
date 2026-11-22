@@ -2,19 +2,52 @@
   "use strict";
   const TYPES = ["CAMISA", "CALCA", "SAPATO", "ATRASO"];
   const RIGHTS = {
-    ADMIN: ["read", "register", "student", "send", "complete", "admin"],
-    ASSISTENTE: ["read", "register", "student", "send"],
+    ADMIN: [
+      "read",
+      "register",
+      "createStudent",
+      "student",
+      "send",
+      "complete",
+      "admin",
+    ],
+    ASSISTENTE: ["read", "register", "createStudent", "student", "send"],
     DEP: ["read", "send", "complete"],
   };
+  const PORTAL_RIGHTS = {
+    ADMIN: ["createAccount"],
+    ASSISTENTE: [
+      "portalData",
+      "read",
+      "referrals",
+      "report",
+      "register",
+      "student",
+      "send",
+    ],
+    DEP: ["portalData", "referrals", "report", "createStudent"],
+  };
+  const mutationRights = {
+    registrarOcorrencia: "register",
+    concluirEncaminhamento: "complete",
+    registrarEncaminhamento: "send",
+    cadastrarAluno: "createStudent",
+    atualizarAluno: "student",
+  };
+  function mutationRight(type) {
+    return Object.hasOwn(mutationRights, type)
+      ? mutationRights[type]
+      : undefined;
+  }
   function fail(code, message) {
     const e = new Error(message);
     e.code = code;
     throw e;
   }
-  function allow(user, action) {
+  function allow(user, action, rights = RIGHTS) {
     if (!user)
       fail("UNAUTHENTICATED", "Não foi possível verificar sua identidade.");
-    if (!user.ativo || !(RIGHTS[user.perfil] || []).includes(action))
+    if (!user.ativo || !(rights[user.perfil] || []).includes(action))
       fail("FORBIDDEN", "Sua conta não tem permissão para esta ação.");
   }
   function text(v, name, max, required) {
@@ -123,15 +156,7 @@
     return n;
   }
   function plan(db, user, type, p, env) {
-    const right =
-      type === "registrarOcorrencia"
-        ? "register"
-        : type === "concluirEncaminhamento"
-          ? "complete"
-          : type === "registrarEncaminhamento"
-            ? "send"
-            : "student";
-    allow(user, right);
+    allow(user, mutationRight(type), env.rights);
     p = normalize(type, p);
     const now = env.now(),
       op = env.uuid(),
@@ -291,6 +316,8 @@
   root.IFAM = {
     TYPES,
     RIGHTS,
+    PORTAL_RIGHTS,
+    mutationRight,
     fail,
     allow,
     text,

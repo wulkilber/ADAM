@@ -47,6 +47,7 @@ const icon = (k) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[k] || icons.dep}"/></svg>`;
 let db,
   user,
+  permissions = [],
   config = {
     campus: "Campus a definir",
     anoLetivoAtivo: 2026,
@@ -109,9 +110,13 @@ const service = {
       throw Object.assign(new Error(r.error.message), { code: r.error.code });
     csrfToken = r.data.csrf;
     user = r.data.usuario;
-    config = r.data.configuracoes;
-    year = Number(config.anoLetivoAtivo);
-    if (!user.trocaSenha) db = await rpc("carregarDados");
+    permissions = r.data.permissoes;
+    db = null;
+    if (r.data.configuracoes) {
+      config = r.data.configuracoes;
+      year = Number(config.anoLetivoAtivo);
+      if (!user.trocaSenha) db = await rpc("carregarDados");
+    }
   },
   async refresh() {
     db = await rpc("carregarDados");
@@ -121,7 +126,7 @@ const service = {
   },
 };
 
-const can = (r) => (IFAM.RIGHTS[user?.perfil] || []).includes(r),
+const can = (r) => permissions.includes(r),
   student = (id) => db.Alunos.find((a) => a.id === id),
   annual = (id) => IFAM.active(db, id, year),
   dt = (v) =>
@@ -153,6 +158,13 @@ function toast(t) {
   setTimeout(() => ($("#toast").style.display = "none"), 4500);
 }
 function navigate(p, id = "") {
+  if (passwordLogin && user.perfil === "ADMIN" && p !== "admin") return;
+  if (
+    passwordLogin &&
+    user.perfil === "DEP" &&
+    !["dep", "document"].includes(p)
+  )
+    return;
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
   dirty = false;
   page = p;
@@ -229,6 +241,9 @@ function enterPortal() {
         : user.perfil === "DEP"
           ? "dep"
           : "home";
+    selected = "";
+    query = course = classroom = countFilter = from = to = typeFilter = "";
+    pendingKey = null;
     statusFilter = "";
   }
   render();
@@ -246,84 +261,39 @@ const roleOptions = (selected) =>
         `<option value="${k}" ${k === selected ? "selected" : ""}>${v}</option>`,
     )
     .join("");
-async function admin() {
-  const content = $("#content");
-  try {
-    const accounts = await rpc("listarContas");
-    if (page !== "admin" || !content.isConnected) return;
-    content.innerHTML =
-      heading(
-        "ADMINISTRAÇÃO",
-        "Administração",
-        "Cadastre e gerencie contas do ADAM.",
-      ) +
-      `<section class="panel"><div class="panel-body"><form id="new-account">
-        <label class="field">Nome<input name="nome" required maxlength="120"></label>
-        <label class="field">Usuário<input name="usuario" required maxlength="40"></label>
-        <label class="field">Perfil<select name="perfil">${roleOptions("ASSISTENTE")}</select></label>
-        <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
-        <button class="primary">Cadastrar conta</button>
-      </form></div></section>
-      <section class="panel"><div class="panel-body"><h2>Contas</h2>${accounts
-        .map(
-          (a, i) =>
-            `<p><strong>${esc(a.nome)}</strong> · ${esc(a.usuario)} · ${roles[a.perfil]} · ${a.ativo ? "Ativa" : "Inativa"}
-          <button data-account="${i}">Editar acesso</button></p>`,
-        )
-        .join("")}</div></section>`;
-    $("#new-account").onsubmit = async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget,
-        button = form.querySelector("button");
-      button.disabled = true;
-      try {
-        await rpc("cadastrarConta", Object.fromEntries(new FormData(form)));
-        await admin();
-      } catch (error) {
-        toast(error.message);
-      } finally {
-        button.disabled = false;
-      }
-    };
-    content.querySelectorAll("[data-account]").forEach((button) => {
-      button.onclick = () => {
-        const account = accounts[Number(button.dataset.account)];
-        modal(
-          `<h2>Editar ${esc(account.usuario)}</h2><form>
-          <label class="field">Perfil<select name="perfil">${roleOptions(account.perfil)}</select></label>
-          <label><input name="ativo" type="checkbox" ${account.ativo ? "checked" : ""}> Conta ativa</label>
-          <label class="field">Nova senha temporária (opcional)<input name="senha" type="password" autocomplete="new-password" minlength="6"></label>
-          <button class="primary">Salvar</button><button type="button" data-close>Cancelar</button></form>`,
-          async (event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            try {
-              await rpc("alterarConta", {
-                id: account.id,
-                perfil: form.elements.perfil.value,
-                senha: form.elements.senha.value,
-                ativo: form.elements.ativo.checked,
-              });
-              $("#modal").close();
-              if (account.id === user.id)
-                login("Seu acesso foi atualizado. Entre novamente.");
-              else await admin();
-            } catch (error) {
-              toast(error.message);
-            }
-          },
-        );
-      };
-    });
-  } catch (error) {
-    if (content.isConnected) content.textContent = error.message;
-  }
+function admin() {
+  $("#content").innerHTML =
+    heading("ADMINISTRAÇÃO", "Criar conta", "Cadastre o acesso ao ADAM.") +
+    `<section class="panel"><div class="panel-body"><form id="new-account">
+      <label class="field">Nome<input name="nome" required maxlength="120"></label>
+      <label class="field">Usuário<input name="usuario" required maxlength="40"></label>
+      <label class="field">Perfil<select name="perfil">${roleOptions("ASSISTENTE")}</select></label>
+      <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
+      <button class="primary">Criar conta</button>
+    </form></div></section>`;
+  $("#new-account").onsubmit = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget,
+      button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      await rpc("cadastrarConta", Object.fromEntries(new FormData(form)));
+      form.reset();
+      toast("Conta criada.");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  };
 }
 
 function render() {
+  const accountOnly = passwordLogin && user.perfil === "ADMIN";
+  const depeOnly = passwordLogin && user.perfil === "DEP";
   const nav = [
     ...(passwordLogin && user.perfil === "ADMIN"
-      ? [["admin", "Administração"]]
+      ? [["admin", "Criar conta"]]
       : []),
     ["home", "Início"],
     ["students", "Alunos"],
@@ -334,9 +304,11 @@ function render() {
   $("#app").innerHTML =
     `<div class="layout"><aside><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small><div class="brand-label">Ocorrências Estudantis</div></div><div class="navlabel">PRINCIPAL</div><nav>${nav
       .filter(([p]) =>
-        passwordLogin && user.perfil === "DEP"
-          ? p === "dep"
-          : p !== "register" || can("register"),
+        accountOnly
+          ? p === "admin"
+          : depeOnly
+            ? p === "dep"
+            : p !== "register" || can("register"),
       )
       .map(
         ([p, t]) =>
@@ -344,21 +316,22 @@ function render() {
       )
       .join(
         "",
-      )}</nav><div class="aside-foot"><strong>Acompanhamento com cuidado.</strong><br>Registros que apoiam a rotina<br>da comunidade escolar.<br><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div></aside><div class="main"><header><button class="quiet menu-toggle" aria-label="Abrir menu" id="menu">☰</button><span class="mobile-brand">IFAM</span><div class="campus"><strong>${esc(config.campus)}</strong>Gestão e acompanhamento estudantil</div><div class="header-right"><label style="font-size:11px;color:#7d8980">Ano letivo <select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label><div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${user.perfil === "ADMIN" ? "Administrador" : user.perfil === "DEP" ? "Responsável DEP" : "Assistente de alunos"}</small></div></div><button class="quiet" id="logout" aria-label="Sair">${icon("logout")}</button></div></header><main><div class="demo"><span class="dot"></span>${demoMode ? "DEMONSTRAÇÃO · Dados fictícios em memória no servidor. Google Sheets não conectado." : passwordLogin ? "AMBIENTE INSTITUCIONAL · acesso autorizado" : "AMBIENTE INSTITUCIONAL · Google Sheets · acesso autorizado"}</div><div id="content"></div><div class="footer">IFAM · Ocorrências Estudantis &nbsp; / &nbsp; Ano letivo ${year}</div></main></div></div>`;
+      )}</nav>${accountOnly || depeOnly ? "" : `<div class="aside-foot"><strong>Acompanhamento com cuidado.</strong><br>Registros que apoiam a rotina<br>da comunidade escolar.<br><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div>`}</aside><div class="main"><header><button class="quiet menu-toggle" aria-label="Abrir menu" id="menu">☰</button><span class="mobile-brand">IFAM</span><div class="campus"><strong>${accountOnly ? "ADAM" : esc(config.campus)}</strong>${accountOnly ? "Administração de contas" : "Gestão e acompanhamento estudantil"}</div><div class="header-right">${accountOnly ? "" : `<label style="font-size:11px;color:#7d8980">Ano letivo <select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label>`}<div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${user.perfil === "ADMIN" ? "Administrador" : user.perfil === "DEP" ? "Responsável DEP" : "Assistente de alunos"}</small></div></div><button class="quiet" id="logout" aria-label="Sair">${icon("logout")}</button></div></header><main><div class="demo"><span class="dot"></span>${demoMode ? "DEMONSTRAÇÃO · Dados fictícios em memória no servidor. Google Sheets não conectado." : passwordLogin ? "AMBIENTE INSTITUCIONAL · acesso autorizado" : "AMBIENTE INSTITUCIONAL · Google Sheets · acesso autorizado"}</div><div id="content"></div><div class="footer">IFAM · Ocorrências Estudantis${accountOnly ? "" : ` &nbsp; / &nbsp; Ano letivo ${year}`}</div></main></div></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((b) => (b.onclick = () => navigate(b.dataset.nav)));
   $("#menu").onclick = () =>
     document.querySelector("aside").classList.toggle("open");
-  $("#year").onchange = (e) => {
-    if (dirty && !confirm("Descartar o formulário para mudar o ano?")) {
-      e.target.value = year;
-      return;
-    }
-    dirty = false;
-    year = +e.target.value;
-    render();
-  };
+  if ($("#year"))
+    $("#year").onchange = (e) => {
+      if (dirty && !confirm("Descartar o formulário para mudar o ano?")) {
+        e.target.value = year;
+        return;
+      }
+      dirty = false;
+      year = +e.target.value;
+      render();
+    };
   $("#logout").onclick = async () => {
     if (dirty && !confirm("Sair e descartar o formulário?")) return;
     try {
@@ -369,6 +342,8 @@ function render() {
       if (!response.ok) throw new Error("Não foi possível sair.");
       dirty = false;
       user = null;
+      db = null;
+      permissions = [];
       csrfToken = "";
       login();
     } catch (e) {
@@ -386,7 +361,7 @@ function render() {
       profile,
       document: documentView,
       settings,
-    })[page] || home
+    })[accountOnly ? "admin" : page] || home
   )();
 }
 function heading(k, title, sub, action = "") {
@@ -525,7 +500,7 @@ function students(only = false) {
       "COMUNIDADE ESCOLAR",
       "Alunos",
       `Consulte cadastros e acompanhe o histórico individual em ${year}.`,
-      can("student")
+      can("createStudent")
         ? '<button class="primary" id="add-student">+ Cadastrar aluno</button>'
         : "",
     ) +
@@ -550,6 +525,7 @@ function modal(html, onSubmit) {
   if (onSubmit) m.querySelector("form").onsubmit = onSubmit;
 }
 function studentModal(a) {
+  if (!can(a ? "student" : "createStudent")) return;
   const key = uid();
   modal(
     `<h2>${a ? "Editar cadastro" : "Cadastrar aluno"}</h2><p>${demoMode ? "Use somente dados fictícios nesta demonstração." : ""}</p><form><div class="form-grid">${["nome", "matricula", "curso", "turma"].map((k, i) => `<label class="field">${["Nome completo", "Matrícula", "Curso", "Turma"][i]}<input name="${k}" required maxlength="${[150, 40, 120, 80][i]}" value="${esc(a?.[k] || "")}"></label>`).join("")}</div><div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">Salvar cadastro</button></div></form>`,
@@ -710,14 +686,16 @@ function dep(only = false) {
     referralDetail();
     return;
   }
+  const depe = passwordLogin && user.perfil === "DEP";
   const rs = db.Encaminhamentos.filter(
     (e) =>
       +e.anoLetivo === year &&
       (!statusFilter || e.status === statusFilter) &&
+      student(e.alunoId) &&
       matches(student(e.alunoId)),
   );
   const list = rs.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Aguardando"}</td>` : ""}<td><button class="text-link" onclick="navigate('dep','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
+    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Sem confirmação"}</td>` : ""}<td><button class="text-link" onclick="navigate('dep','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
     : '<div class="empty">Nenhum encaminhamento encontrado com estes filtros.</div>';
   if (only) {
     $("#ref-results").innerHTML = list;
@@ -730,12 +708,15 @@ function dep(only = false) {
         ? "Fila do DEPE"
         : "Encaminhamentos ao DEP",
       `Casos no ano letivo de ${year}.`,
-      passwordLogin ? '<button id="refresh-referrals">Atualizar</button>' : "",
+      passwordLogin
+        ? `<div class="actions"><button id="refresh-referrals">Atualizar</button>${depe && can("createStudent") ? '<button class="primary" id="add-student">Cadastrar aluno</button>' : ""}</div>`
+        : "",
     ) +
-    `<div class="tabs">${["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""].map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
+    `<div class="tabs">${(depe ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
-    `<section class="panel" id="ref-results">${list}</section><div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEP.</div>`;
+    `<section class="panel" id="ref-results">${list}</section>${depe ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEP.</div>'}`;
   filterEvents(dep);
+  if ($("#add-student")) $("#add-student").onclick = () => studentModal();
   if ($("#refresh-referrals"))
     $("#refresh-referrals").onclick = async () => {
       try {
@@ -768,21 +749,7 @@ function referralDetail() {
       `${esc(snap.aluno.matricula)} · ${esc(snap.aluno.turma)} · Ano letivo ${r.anoLetivo}`,
       `<button onclick="navigate('dep')">Voltar para encaminhamentos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("dep")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${passwordLogin && user.perfil === "DEP" && !r.lidoEm && r.status !== "PENDENTE" ? '<button id="confirm-reading">Confirmar leitura</button>' : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") && (!passwordLogin || user.perfil === "DEP") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
-  if ($("#confirm-reading"))
-    $("#confirm-reading").onclick = async () => {
-      const button = $("#confirm-reading");
-      button.disabled = true;
-      try {
-        await rpc("confirmarLeituraDepe", { id: r.id });
-        await service.refresh();
-        if (page === "dep" && selected === r.id) referralDetail();
-      } catch (error) {
-        toast(error.message);
-      } finally {
-        button.disabled = false;
-      }
-    };
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("dep")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
   if ($("#transition")) $("#transition").onclick = () => transition(r);
   if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
 }
