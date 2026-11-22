@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: adam-ifam
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        sync: false
+      - key: ADAM_INITIAL_USER
+        value: admin
+      - key: ADAM_INITIAL_PASSWORD
+        sync: false

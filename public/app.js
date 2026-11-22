@@ -67,6 +67,7 @@ let db,
   pendingKey = null;
 let live = true,
   demoMode = false,
+  passwordLogin = false,
   csrfToken = "";
 const rpc = async (name, p = {}) => {
   const controller = new AbortController(),
@@ -110,7 +111,7 @@ const service = {
     user = r.data.usuario;
     config = r.data.configuracoes;
     year = Number(config.anoLetivoAtivo);
-    db = await rpc("carregarDados");
+    if (!user.trocaSenha) db = await rpc("carregarDados");
   },
   async refresh() {
     db = await rpc("carregarDados");
@@ -166,33 +167,164 @@ function navigate(p, id = "") {
 }
 function login(error = "") {
   $("#app").innerHTML =
-    `<div class="login"><div class="login-card"><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small></div><h1>ADAM</h1><p>Ocorrências Estudantis</p><p>Registre, acompanhe e cuide da rotina escolar.</p>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<button class="primary" id="enter">${demoMode ? "Entrar em demonstração" : "Entrar com Google"}</button><p>${demoMode ? "Dados fictícios em memória no servidor. Não conectado ao Google Sheets." : "Acesso restrito às contas autorizadas pela instituição."}</p></div></div>`;
-  $("#enter").onclick = async () => {
-    if (!demoMode) {
+    `<div class="login"><div class="login-card"><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small></div><h1>ADAM</h1><p>Ocorrências Estudantis</p><p>Registre, acompanhe e cuide da rotina escolar.</p>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<form id="login-form">${passwordLogin ? '<label class="field">Usuário<input name="usuario" autocomplete="username" required maxlength="128"></label><label class="field">Senha<input name="senha" type="password" autocomplete="current-password" required maxlength="256"></label>' : ""}<button class="primary" id="enter">${passwordLogin ? "Entrar" : demoMode ? "Entrar em demonstração" : "Entrar com Google"}</button></form><p>${demoMode ? "Dados fictícios em memória no servidor. Não conectado ao Google Sheets." : "Acesso restrito às contas autorizadas pela instituição."}</p></div></div>`;
+  $("#login-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    if (!demoMode && !passwordLogin) {
       location.assign("/auth/google");
       return;
     }
     const button = $("#enter");
     button.disabled = true;
     try {
-      const response = await fetch("/auth/demo", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
+      const response = await fetch(
+        passwordLogin ? "/auth/password" : "/auth/demo",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.fromEntries(new FormData(form))),
+        },
+      );
       if (!response.ok)
-        throw new Error("Não foi possível iniciar a demonstração.");
+        throw new Error(
+          (await response.json()).error?.message || "Não foi possível entrar.",
+        );
       await service.load();
-      render();
+      enterPortal();
     } catch (e) {
       login(e.message);
     }
   };
 }
 
+function enterPortal() {
+  if (user.trocaSenha) {
+    $("#app").innerHTML =
+      `<div class="login"><div class="login-card"><h1>Troque sua senha temporária</h1>
+      <form id="change"><label class="field">Nova senha<input name="senha" type="password" autocomplete="new-password" minlength="15" required></label>
+      <p id="change-error" role="alert"></p><button class="primary">Salvar e entrar</button></form></div></div>`;
+    $("#change").onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget,
+        button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        await rpc("trocarSenha", { senha: form.elements.senha.value });
+        await service.load();
+        enterPortal();
+      } catch (error) {
+        $("#change-error").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    };
+    return;
+  }
+  if (passwordLogin) {
+    page =
+      user.perfil === "ADMIN"
+        ? "admin"
+        : user.perfil === "DEP"
+          ? "dep"
+          : "home";
+    statusFilter = "";
+  }
+  render();
+}
+
+const roles = {
+  ADMIN: "Administrador",
+  DEP: "DEPE",
+  ASSISTENTE: "Assistente de Alunos",
+};
+const roleOptions = (selected) =>
+  Object.entries(roles)
+    .map(
+      ([k, v]) =>
+        `<option value="${k}" ${k === selected ? "selected" : ""}>${v}</option>`,
+    )
+    .join("");
+async function admin() {
+  const content = $("#content");
+  try {
+    const accounts = await rpc("listarContas");
+    if (page !== "admin" || !content.isConnected) return;
+    content.innerHTML =
+      heading(
+        "ADMINISTRAÇÃO",
+        "Administração",
+        "Cadastre e gerencie contas do ADAM.",
+      ) +
+      `<section class="panel"><div class="panel-body"><form id="new-account">
+        <label class="field">Nome<input name="nome" required maxlength="120"></label>
+        <label class="field">Usuário<input name="usuario" required maxlength="40"></label>
+        <label class="field">Perfil<select name="perfil">${roleOptions("ASSISTENTE")}</select></label>
+        <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="15" required></label>
+        <button class="primary">Cadastrar conta</button>
+      </form></div></section>
+      <section class="panel"><div class="panel-body"><h2>Contas</h2>${accounts
+        .map(
+          (a, i) =>
+            `<p><strong>${esc(a.nome)}</strong> · ${esc(a.usuario)} · ${roles[a.perfil]} · ${a.ativo ? "Ativa" : "Inativa"}
+          <button data-account="${i}">Editar acesso</button></p>`,
+        )
+        .join("")}</div></section>`;
+    $("#new-account").onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget,
+        button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        await rpc("cadastrarConta", Object.fromEntries(new FormData(form)));
+        await admin();
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    };
+    content.querySelectorAll("[data-account]").forEach((button) => {
+      button.onclick = () => {
+        const account = accounts[Number(button.dataset.account)];
+        modal(
+          `<h2>Editar ${esc(account.usuario)}</h2><form>
+          <label class="field">Perfil<select name="perfil">${roleOptions(account.perfil)}</select></label>
+          <label><input name="ativo" type="checkbox" ${account.ativo ? "checked" : ""}> Conta ativa</label>
+          <label class="field">Nova senha temporária (opcional)<input name="senha" type="password" autocomplete="new-password" minlength="15"></label>
+          <button class="primary">Salvar</button><button type="button" data-close>Cancelar</button></form>`,
+          async (event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            try {
+              await rpc("alterarConta", {
+                id: account.id,
+                perfil: form.elements.perfil.value,
+                senha: form.elements.senha.value,
+                ativo: form.elements.ativo.checked,
+              });
+              $("#modal").close();
+              if (account.id === user.id)
+                login("Seu acesso foi atualizado. Entre novamente.");
+              else await admin();
+            } catch (error) {
+              toast(error.message);
+            }
+          },
+        );
+      };
+    });
+  } catch (error) {
+    if (content.isConnected) content.textContent = error.message;
+  }
+}
+
 function render() {
   const nav = [
+    ...(passwordLogin && user.perfil === "ADMIN"
+      ? [["admin", "Administração"]]
+      : []),
     ["home", "Início"],
     ["students", "Alunos"],
     ["register", "Registrar ocorrência"],
@@ -201,14 +333,18 @@ function render() {
   ];
   $("#app").innerHTML =
     `<div class="layout"><aside><div class="brand"><strong>IFAM</strong><small>INSTITUTO FEDERAL<br>DO AMAZONAS</small><div class="brand-label">Ocorrências Estudantis</div></div><div class="navlabel">PRINCIPAL</div><nav>${nav
-      .filter(([p]) => p !== "register" || can("register"))
+      .filter(([p]) =>
+        passwordLogin && user.perfil === "DEP"
+          ? p === "dep"
+          : p !== "register" || can("register"),
+      )
       .map(
         ([p, t]) =>
           `<button data-nav="${p}" class="${page === p || (p === "students" && page === "profile") ? "active" : ""}">${icon(p === "register" ? "plus" : p)}${t}</button>`,
       )
       .join(
         "",
-      )}</nav><div class="aside-foot"><strong>Acompanhamento com cuidado.</strong><br>Registros que apoiam a rotina<br>da comunidade escolar.<br><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div></aside><div class="main"><header><button class="quiet menu-toggle" aria-label="Abrir menu" id="menu">☰</button><span class="mobile-brand">IFAM</span><div class="campus"><strong>${esc(config.campus)}</strong>Gestão e acompanhamento estudantil</div><div class="header-right"><label style="font-size:11px;color:#7d8980">Ano letivo <select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label><div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${user.perfil === "ADMIN" ? "Administrador" : user.perfil === "DEP" ? "Responsável DEP" : "Assistente de alunos"}</small></div></div><button class="quiet" id="logout" aria-label="Sair">${icon("logout")}</button></div></header><main><div class="demo"><span class="dot"></span>${demoMode ? "DEMONSTRAÇÃO · Dados fictícios em memória no servidor. Google Sheets não conectado." : "AMBIENTE INSTITUCIONAL · Google Sheets · acesso autorizado"}</div><div id="content"></div><div class="footer">IFAM · Ocorrências Estudantis &nbsp; / &nbsp; Ano letivo ${year}</div></main></div></div>`;
+      )}</nav><div class="aside-foot"><strong>Acompanhamento com cuidado.</strong><br>Registros que apoiam a rotina<br>da comunidade escolar.<br><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div></aside><div class="main"><header><button class="quiet menu-toggle" aria-label="Abrir menu" id="menu">☰</button><span class="mobile-brand">IFAM</span><div class="campus"><strong>${esc(config.campus)}</strong>Gestão e acompanhamento estudantil</div><div class="header-right"><label style="font-size:11px;color:#7d8980">Ano letivo <select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label><div class="user"><span class="avatar">${esc(initials(user.nome))}</span><div class="username">${esc(user.nome)}<small>${user.perfil === "ADMIN" ? "Administrador" : user.perfil === "DEP" ? "Responsável DEP" : "Assistente de alunos"}</small></div></div><button class="quiet" id="logout" aria-label="Sair">${icon("logout")}</button></div></header><main><div class="demo"><span class="dot"></span>${demoMode ? "DEMONSTRAÇÃO · Dados fictícios em memória no servidor. Google Sheets não conectado." : passwordLogin ? "AMBIENTE INSTITUCIONAL · acesso autorizado" : "AMBIENTE INSTITUCIONAL · Google Sheets · acesso autorizado"}</div><div id="content"></div><div class="footer">IFAM · Ocorrências Estudantis &nbsp; / &nbsp; Ano letivo ${year}</div></main></div></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((b) => (b.onclick = () => navigate(b.dataset.nav)));
@@ -241,6 +377,7 @@ function render() {
   };
   (
     ({
+      admin,
       home,
       students,
       register,
@@ -580,7 +717,7 @@ function dep(only = false) {
       matches(student(e.alunoId)),
   );
   const list = rs.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Limite atingido</th><th>Status</th><th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(e.criadoEm)}</td><td>${badge(e.status)}</td><td><button class="text-link" onclick="navigate('dep','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
+    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Aguardando"}</td>` : ""}<td><button class="text-link" onclick="navigate('dep','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
     : '<div class="empty">Nenhum encaminhamento encontrado com estes filtros.</div>';
   if (only) {
     $("#ref-results").innerHTML = list;
@@ -589,13 +726,25 @@ function dep(only = false) {
   $("#content").innerHTML =
     heading(
       "ACOMPANHAMENTO",
-      "Encaminhamentos ao DEP",
-      `Pendências e atendimentos dos alunos com três ocorrências em ${year}.`,
+      passwordLogin && user.perfil === "DEP"
+        ? "Fila do DEPE"
+        : "Encaminhamentos ao DEP",
+      `Casos no ano letivo de ${year}.`,
+      passwordLogin ? '<button id="refresh-referrals">Atualizar</button>' : "",
     ) +
     `<div class="tabs">${["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""].map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
     `<section class="panel" id="ref-results">${list}</section><div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEP.</div>`;
   filterEvents(dep);
+  if ($("#refresh-referrals"))
+    $("#refresh-referrals").onclick = async () => {
+      try {
+        await service.refresh();
+        if (page === "dep") dep();
+      } catch (error) {
+        toast(error.message);
+      }
+    };
   document.querySelectorAll("[data-status]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -619,7 +768,21 @@ function referralDetail() {
       `${esc(snap.aluno.matricula)} · ${esc(snap.aluno.turma)} · Ano letivo ${r.anoLetivo}`,
       `<button onclick="navigate('dep')">Voltar para encaminhamentos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("dep")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O documento preserva os dados do momento em que o limite foi atingido.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("dep")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${passwordLogin && user.perfil === "DEP" && !r.lidoEm && r.status !== "PENDENTE" ? '<button id="confirm-reading">Confirmar leitura</button>' : ""}${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") && (!passwordLogin || user.perfil === "DEP") ? '<button class="primary" id="transition">Concluir atendimento</button>' : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>Concluído em ${dt(r.concluidoEm)}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+  if ($("#confirm-reading"))
+    $("#confirm-reading").onclick = async () => {
+      const button = $("#confirm-reading");
+      button.disabled = true;
+      try {
+        await rpc("confirmarLeituraDepe", { id: r.id });
+        await service.refresh();
+        if (page === "dep" && selected === r.id) referralDetail();
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    };
   if ($("#transition")) $("#transition").onclick = () => transition(r);
   if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
 }
@@ -778,7 +941,7 @@ function reports() {
 function settings() {
   $("#content").innerHTML =
     heading("INFORMAÇÕES", "Sobre o ADAM", "Ocorrências Estudantis · IFAM") +
-    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${esc(config.campus)}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. A terceira ocorrência do ano cria uma pendência no DEP. Emitir o documento não encaminha automaticamente. Concluir atendimento mantém o histórico.</p><p>A marca oficial, os perfis e a política após três ocorrências dependem de validação institucional.</p></div></section>`;
+    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : passwordLogin ? "Registros armazenados no PostgreSQL do Supabase. Permissões verificadas pelo servidor." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${esc(config.campus)}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. A terceira ocorrência do ano cria uma pendência no DEP. Emitir o documento não encaminha automaticamente. Concluir atendimento mantém o histórico.</p><p>A marca oficial, os perfis e a política após três ocorrências dependem de validação institucional.</p></div></section>`;
 }
 window.addEventListener("beforeunload", (e) => {
   if (dirty) {
@@ -792,9 +955,11 @@ async function boot() {
   try {
     const r = await fetch("/api/config");
     if (!r.ok) throw new Error("Servidor indisponível.");
-    demoMode = (await r.json()).demo === true;
+    const modes = await r.json();
+    demoMode = modes.demo === true;
+    passwordLogin = modes.passwordLogin === true;
     await service.load();
-    render();
+    enterPortal();
   } catch (e) {
     login(e.code === "UNAUTHENTICATED" ? "" : e.message);
   }

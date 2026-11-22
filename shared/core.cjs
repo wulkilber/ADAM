@@ -3,7 +3,7 @@
   const TYPES = ["CAMISA", "CALCA", "SAPATO", "ATRASO"];
   const RIGHTS = {
     ADMIN: ["read", "register", "student", "send", "complete", "admin"],
-    ASSISTENTE: ["read", "register", "send"],
+    ASSISTENTE: ["read", "register", "student", "send"],
     DEP: ["read", "send", "complete"],
   };
   function fail(code, message) {

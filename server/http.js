@@ -26,6 +26,8 @@ async function body(req) {
 }
 export function createServer({ config, auth, service }) {
   const hits = new Map();
+  let loginWindow = 0;
+  let loginAttempts = 0;
   return http.createServer(
     { requestTimeout: 45000, headersTimeout: 10000, maxHeaderSize: 16384 },
     async (req, res) => {
@@ -57,9 +59,31 @@ export function createServer({ config, auth, service }) {
         if (req.method === "GET" && url.pathname === "/healthz")
           return json(200, { status: "ok" });
         if (req.method === "GET" && url.pathname === "/api/config")
-          return json(200, { demo: config.demo });
+          return json(200, {
+            demo: config.demo,
+            passwordLogin: Boolean(config.passwordLogin),
+          });
+        if (
+          req.method === "POST" &&
+          url.pathname === "/auth/password" &&
+          config.passwordLogin
+        ) {
+          if (req.headers.origin !== config.origin)
+            fault("FORBIDDEN", "Origem inválida.", 403);
+          const window = Math.floor(Date.now() / 60000);
+          if (window !== loginWindow) {
+            loginWindow = window;
+            loginAttempts = 0;
+          }
+          if (++loginAttempts > 50)
+            fault("BUSY_RETRY", "Muitas tentativas. Aguarde um minuto.", 429);
+          const subject = await service.login(await body(req));
+          const logged = auth.create(subject);
+          res.setHeader("Set-Cookie", logged.cookie);
+          return json(200, { ok: true });
+        }
         if (req.method === "GET" && url.pathname === "/auth/google") {
-          if (config.demo)
+          if (config.demo || config.passwordLogin)
             fault(
               "NOT_FOUND",
               "Login Google indisponível na demonstração.",
@@ -69,7 +93,8 @@ export function createServer({ config, auth, service }) {
           return redirect(attempt.url, attempt.cookie);
         }
         if (req.method === "GET" && url.pathname === "/auth/google/callback") {
-          if (config.demo) fault("NOT_FOUND", "Rota indisponível.", 404);
+          if (config.demo || config.passwordLogin)
+            fault("NOT_FOUND", "Rota indisponível.", 404);
           try {
             const email = await auth.callback(req, url);
             await service.execute("obterSessao", {}, email);
@@ -128,6 +153,11 @@ export function createServer({ config, auth, service }) {
           const name = url.pathname.slice(5),
             p = await body(req);
           let data = await service.execute(name, p, s.email);
+          if (name === "trocarSenha" && config.passwordLogin) {
+            auth.logout(req);
+            res.setHeader("Set-Cookie", auth.create(data).cookie);
+            data = null;
+          }
           if (name === "gerarPdfEncaminhamento") {
             const pdf = await makePdf(data, { logoPath: config.logoPath });
             if (pdf.length > 5000000)

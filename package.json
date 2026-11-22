@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "google-auth-library": "11.3.4",
-    "pdfkit": "0.21.0"
+    "pdfkit": "0.21.0",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",

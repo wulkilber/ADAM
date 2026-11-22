@@ -5,6 +5,9 @@ import { DiskJournal, MemoryJournal, acquireInstance } from "./coordination.js";
 import { AdamService } from "./service.js";
 import { Auth } from "./auth.js";
 import { createServer } from "./http.js";
+import { PostgresRepository } from "./postgres.js";
+import { passwordRecord, validateUsername } from "./accounts.js";
+import { randomUUID } from "node:crypto";
 import { demoDatabase } from "./demo.js";
 
 async function start() {
@@ -15,6 +18,45 @@ async function start() {
   if (config.demo) {
     repo = new MemoryRepository(demoDatabase());
     journal = new MemoryJournal();
+  } else if (config.passwordLogin) {
+    repo = new PostgresRepository(config.databaseUrl);
+    release = () => repo.pool.end();
+    try {
+      const db = demoDatabase();
+      for (const table of Object.keys(db)) db[table] = [];
+      db.AnosLetivos.push({
+        ano: new Date().getFullYear(),
+        ativoParaRegistro: true,
+      });
+      await repo.initialize(db);
+      const snapshot = await repo.read();
+      if (!snapshot.db.Usuarios.length) {
+        const usuario = validateUsername(process.env.ADAM_INITIAL_USER);
+        const credentials = await passwordRecord(
+          process.env.ADAM_INITIAL_PASSWORD,
+        );
+        await repo.commit(
+          await repo.prepare(snapshot, [
+            {
+              table: "Usuarios",
+              row: {
+                id: randomUUID(),
+                nome: "Administrador",
+                usuario,
+                email: "",
+                perfil: "ADMIN",
+                ativo: true,
+                credentials,
+                trocaSenha: true,
+              },
+            },
+          ]),
+        );
+      }
+    } catch (error) {
+      await release();
+      throw error;
+    }
   } else {
     release = await acquireInstance(config.dataDir);
     try {
@@ -49,7 +91,7 @@ async function start() {
   });
   server.listen(config.port, config.host, () =>
     console.log(
-      `ADAM disponível em ${config.origin} — ${config.demo ? "DEMONSTRAÇÃO: somente dados fictícios em memória" : "Google Sheets; instância única"}`,
+      `ADAM disponível em ${config.origin} — ${config.demo ? "DEMONSTRAÇÃO: somente dados fictícios em memória" : config.passwordLogin ? "PostgreSQL" : "Google Sheets; instância única"}`,
     ),
   );
   let stopping = false;

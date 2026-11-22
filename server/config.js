@@ -3,7 +3,9 @@ import path from "node:path";
 export function configuration(env = process.env, args = process.argv) {
   const production = env.NODE_ENV === "production";
   const demo = args.includes("--demo") || env.DEMO_MODE === "true";
-  const origin = new URL(env.APP_URL || "http://localhost:3000");
+  const origin = new URL(
+    env.APP_URL || env.RENDER_EXTERNAL_URL || "http://localhost:3000",
+  );
   if (
     origin.pathname !== "/" ||
     origin.search ||
@@ -18,7 +20,7 @@ export function configuration(env = process.env, args = process.argv) {
     throw new Error("APP_URL inválida.");
   if (production && (demo || origin.protocol !== "https:"))
     throw new Error("Produção exige HTTPS e DEMO_MODE=false.");
-  if (!demo) {
+  if (!demo && !env.DATABASE_URL) {
     for (const key of [
       "SPREADSHEET_ID",
       "GOOGLE_CLIENT_ID",
@@ -38,11 +40,13 @@ export function configuration(env = process.env, args = process.argv) {
     throw new Error("PORT inválida.");
   return {
     production,
+    databaseUrl: env.DATABASE_URL,
+    passwordLogin: Boolean(!demo && env.DATABASE_URL),
     demo,
     port,
     origin: origin.origin,
     secure: origin.protocol === "https:",
-    host: env.HOST || "127.0.0.1",
+    host: env.HOST || (env.RENDER ? "0.0.0.0" : "127.0.0.1"),
     dataDir: path.resolve(env.DATA_DIR || "./data"),
     spreadsheetId: env.SPREADSHEET_ID,
     clientId: env.GOOGLE_CLIENT_ID,
