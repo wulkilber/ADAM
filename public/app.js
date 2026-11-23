@@ -33,19 +33,38 @@ const icons = {
   sun: "M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5m-2 7a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
   home: "M3 10 12 3l9 7v11h-6v-7H9v7H3z",
   students:
-    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6m-3-3h6",
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-4m-3-11a4 4 0 0 1 0 8",
   plus: "M12 5v14M5 12h14",
+  menu: "M4 6h16M4 12h16M4 18h16",
+  close: "m6 6 12 12M18 6 6 18",
+  catalog:
+    "M12 6v15m-9-3V4h4a5 5 0 0 1 5 2 5 5 0 0 1 5-2h4v14h-4a5 5 0 0 0-5 3 5 5 0 0 0-5-3H3Z",
+  register: "M8 4H5v17h14V4h-3m-8 0V2h8v5H8V4m4 7v6m-3-3h6",
   depe: "M9 3H5v18h14V7l-4-4H9m0 0v5h6M8 13h8M8 17h6",
   reports: "M4 21V11m8 10V3m8 18V7",
   arrow: "M5 12h14m-6-6 6 6-6 6",
+  back: "M19 12H5m6 6-6-6 6-6",
   clock: "M12 8v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   check: "m5 12 4 4L19 6",
+  alert: "M12 8v4m0 4h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
+  inbox: "M4 13 7 5h10l3 8v6H4Zm0 0h5l1 2h4l1-2h5",
+  edit: "m13 6 5 5m1-8 2 2a1.4 1.4 0 0 1 0 2L9 19l-6 2 2-6L17 3a1.4 1.4 0 0 1 2 0Z",
+  trash: "M3 6h18M9 6V3h6v3m4 0-1 15H6L5 6m5 4v7m4-7v7",
+  download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5",
+  print: "M6 9V3h12v6m0 9h3V9H3v9h3m0-4h12v8H6Zm11-2h1",
+  read: "M12 12.5 14 15l4-5m4 2s-3.5 6-10 6S2 12 2 12s3.5-6 10-6 10 6 10 6Z",
+  finish: "M7 6V4h10v2h4v14H3V6h4m0 0h10m-9 7 3 3 5-6",
+  send: "m22 2-7 20-4-9-9-4 20-7ZM11 13 22 2",
+  refresh:
+    "M20 8A8.5 8.5 0 0 0 5 7L3 10m0-5v5h5m-4 6a8.5 8.5 0 0 0 15 1l2-3m0 5v-5h-5",
+  deactivate:
+    "M20 21v-2a4 4 0 0 0-4-4h-1M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m-7 5 6 6m0-6-6 6",
   search: "M21 21l-6-6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
-  settings: "M4 6h16M4 12h16M4 18h16",
+  settings: "M12 11v6m0-10h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
   logout: "M9 3H3v18h6m4-15 6 6-6 6m-6-6h12",
 };
 const icon = (k) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[k] || icons.depe}"/></svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${icons[k] || icons.depe}"/></svg>`;
 let db,
   user,
   permissions = [],
@@ -146,7 +165,7 @@ const can = (r) => permissions.includes(r),
   statusLabel = (s) =>
     passwordLogin && s === "CONCLUIDO" ? "Encerrado" : labels[s] || esc(s),
   badge = (s) =>
-    `<span class="badge ${s === "PENDENTE" ? "warn" : s === "CONCLUIDO" ? "green" : ""}">${s === "CONCLUIDO" ? "✓ " : s === "PENDENTE" ? "◷ " : ""}${statusLabel(s)}</span>`,
+    `<span class="badge status-badge ${s === "PENDENTE" ? "warn" : s === "CONCLUIDO" ? "green" : ""}">${s === "CONCLUIDO" ? icon("check") : s === "PENDENTE" ? icon("clock") : s === "ENCAMINHADO" ? icon("send") : ""}${statusLabel(s)}</span>`,
   tags = (o) =>
     JSON.parse(o.irregularidadesJson)
       .map(
@@ -165,12 +184,74 @@ const can = (r) => permissions.includes(r),
 function person(a) {
   return `<div class="person"><span class="avatar">${esc(initials(a.nome))}</span><div><strong>${esc(a.nome)}</strong><small>${esc(a.matricula)}</small></div></div>`;
 }
-function toast(t) {
-  $("#toast").textContent = t;
-  $("#toast").style.display = "block";
-  setTimeout(() => ($("#toast").style.display = "none"), 4500);
+let toastTimer;
+function toast(message, tone = "success") {
+  const notice = $("#toast");
+  notice.dataset.tone = tone;
+  notice.innerHTML = `<div class="toast-message">${icon(tone === "error" ? "alert" : "check")}<span>${esc(message)}</span></div>`;
+  notice.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (notice.style.display = "none"), 4500);
 }
 let navigation = 0;
+const drawerViewport = matchMedia(
+  "(max-width: 900px), (max-width: 1000px) and (max-height: 540px)",
+);
+function setSidebarOpen(open, restoreFocus = false) {
+  const sidebar = $("#sidebar");
+  const menu = $("#menu");
+  if (!sidebar || !menu) return;
+  sidebar.classList.toggle("open", open);
+  $("#sidebar-scrim").hidden = !open;
+  $(".main").inert = open;
+  document.body.classList.toggle("sidebar-open", open);
+  menu.setAttribute("aria-expanded", String(open));
+  if (open) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+    $("#close-menu").focus();
+  } else {
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+    if (restoreFocus) menu.focus();
+  }
+}
+drawerViewport.addEventListener("change", ({ matches }) => {
+  if (!matches) setSidebarOpen(false);
+});
+
+function containTab(event) {
+  if (event.key !== "Tab") return;
+  const controls = [
+    ...event.currentTarget.querySelectorAll(
+      "a[href], button, input, select, textarea, [tabindex]",
+    ),
+  ].filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.matches(":disabled") &&
+      control.getClientRects().length,
+  );
+  const first = controls[0];
+  const last = controls.at(-1);
+  const edge = event.shiftKey ? first : last;
+  if (
+    first &&
+    (document.activeElement === edge ||
+      !controls.includes(document.activeElement))
+  ) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
+const focusPageHeading = () =>
+  ($("#content h1") || $("#main-content"))?.focus({ preventScroll: true });
+
+function loadingState(message) {
+  return `<div class="loading-state" role="status">${esc(message)}</div>`;
+}
+
 async function navigate(p, id = "") {
   if (passwordLogin && user.perfil === "ADMIN" && p !== "admin") return;
   if (
@@ -182,6 +263,7 @@ async function navigate(p, id = "") {
   )
     return;
   if (dirty && !confirm("Descartar os dados preenchidos?")) return;
+  setSidebarOpen(false);
   dirty = false;
   page = p;
   if (p === "reports") reportPage = 1;
@@ -199,7 +281,7 @@ async function navigate(p, id = "") {
       p,
     )
   ) {
-    $("#content").innerHTML = '<p role="status">Atualizando dados…</p>';
+    $("#content").innerHTML = loadingState("Atualizando dados…");
     try {
       const data = await rpc("carregarDados");
       if (attempt !== navigation) return;
@@ -208,11 +290,12 @@ async function navigate(p, id = "") {
       if (attempt !== navigation) return;
       $("#content").innerHTML = '<p class="error" role="alert"></p>';
       $("#content .error").textContent = error.message;
+      focusPageHeading();
       return;
     }
   }
   render();
-  $("#content h1")?.focus({ preventScroll: true });
+  focusPageHeading();
   window.scrollTo(0, 0);
 }
 const themeToggle = () =>
@@ -340,7 +423,7 @@ function admin() {
       <label class="field">Usuário<input name="usuario" required maxlength="40"></label>
       <label class="field">Perfil<select name="perfil">${roleOptions("ASSISTENTE")}</select></label>
       <label class="field">Senha temporária<input name="senha" type="password" autocomplete="new-password" minlength="6" required></label>
-      <button class="primary">Criar conta</button>
+      <button class="primary action-icon">${icon("admin")} Criar conta</button>
     </form></div></section>`;
   $("#new-account").onsubmit = async (event) => {
     event.preventDefault();
@@ -352,7 +435,7 @@ function admin() {
       form.reset();
       toast("Conta criada.");
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     } finally {
       button.disabled = false;
     }
@@ -391,14 +474,17 @@ function render() {
     .join("");
   $("#app").innerHTML = `
     <div class="layout">
-      <aside id="sidebar">
-        <div class="sidebar-brand"><strong>ADAM</strong><span>Ocorrências Estudantis</span></div>
+      <aside id="sidebar" aria-label="Menu lateral">
+        <div class="sidebar-brand"><strong>ADAM</strong><span>Ocorrências Estudantis</span>
+          <button type="button" class="quiet sidebar-close" id="close-menu" aria-label="Fechar menu">${icon("close")}</button>
+        </div>
         <nav aria-label="Menu principal">${items}</nav>
         ${accountOnly || depeOnly ? "" : `<div class="aside-foot"><button class="quiet" data-nav="settings">${icon("settings")} Sobre o sistema</button></div>`}
       </aside>
+      <button type="button" class="sidebar-scrim" id="sidebar-scrim" tabindex="-1" aria-hidden="true" hidden></button>
       <div class="main">
         <header>
-          <button class="quiet menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false" id="menu">☰</button>
+          <button type="button" class="quiet menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false" id="menu">${icon("menu")}</button>
           <div class="campus">${campusMark()}<strong>${IFAM.CAMPUS_NAME}</strong></div>
           <div class="header-right">
             ${accountOnly ? "" : `<label class="year-field"><span>Ano letivo</span><select id="year" aria-label="Ano letivo">${db.AnosLetivos.map((y) => `<option ${Number(y.ano) === year ? "selected" : ""}>${y.ano}</option>`).join("")}</select></label>`}
@@ -407,7 +493,7 @@ function render() {
             <button class="quiet" id="logout" aria-label="Sair" title="Sair">${icon("logout")}</button>
           </div>
         </header>
-        <main id="main-content">
+        <main id="main-content" tabindex="-1">
           ${demoMode ? '<div class="demo"><span class="dot"></span>Demonstração com dados fictícios</div>' : ""}
           <div id="content"></div>
           <footer class="footer">${IFAM.CAMPUS_NAME}${accountOnly ? "" : ` · Ano letivo ${year}`}</footer>
@@ -417,18 +503,17 @@ function render() {
   document
     .querySelectorAll("[data-nav]")
     .forEach((b) => (b.onclick = () => navigate(b.dataset.nav)));
-  const menu = $("#menu");
-  menu.onclick = () => {
-    const open = $("#sidebar").classList.toggle("open");
-    menu.setAttribute("aria-expanded", String(open));
-    menu.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
-    if (open) $("#sidebar nav button").focus();
-  };
+  document.body.classList.remove("sidebar-open");
+  $("#menu").onclick = () => setSidebarOpen(true);
+  $("#close-menu").onclick = () => setSidebarOpen(false, true);
+  $("#sidebar-scrim").onclick = () => setSidebarOpen(false, true);
   $("#sidebar").onkeydown = (event) => {
-    if (event.key === "Escape" && $("#sidebar").classList.contains("open")) {
-      menu.click();
-      menu.focus();
+    if (!event.currentTarget.classList.contains("open")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setSidebarOpen(false, true);
     }
+    containTab(event);
   };
   if ($("#year"))
     $("#year").onchange = (e) => {
@@ -456,9 +541,12 @@ function render() {
       db = null;
       permissions = [];
       csrfToken = "";
+      clearTimeout(toastTimer);
+      $("#toast").style.display = "none";
+      $("#toast").replaceChildren();
       login();
     } catch (e) {
-      toast(e.message);
+      toast(e.message, "error");
     }
   };
   (
@@ -481,20 +569,39 @@ function heading(k, title, sub, action = "") {
 }
 const newButton = () =>
   can("register")
-    ? `<button class="primary" onclick="navigate('register')">${icon("plus")} Registrar ocorrência</button>`
+    ? `<button class="primary action-icon" onclick="navigate('register')">${icon("register")} Registrar ocorrência</button>`
     : "";
+function responsiveTable(name, headers, body) {
+  return `<table class="responsive-table" role="table" aria-label="${esc(name)}">
+    <thead role="rowgroup"><tr role="row">${headers.map((label) => `<th role="columnheader" scope="col">${esc(label)}</th>`).join("")}</tr></thead>
+    <tbody role="rowgroup">${body}</tbody>
+  </table>`;
+}
+function emptyState(message) {
+  return `<div class="empty">${icon("inbox")}<span>${esc(message)}</span></div>`;
+}
 function rows(list) {
   return list
     .map((o) => {
       const a = student(o.alunoId);
-      return `<tr><td>${person(a)}</td><td data-label="Turma">${esc(a.turma)}</td><td data-label="Irregularidades"><div class="tagrow">${tags(o)}</div></td><td data-label="Data">${dt(o.dataHoraAbordagem).split(",")[0]}</td><td><button class="text-link" onclick="navigate('profile','${a.id}')" aria-label="Ver histórico de ${esc(a.nome)}">${icon("arrow")}</button></td></tr>`;
+      return `<tr role="row">
+        <td role="cell">${person(a)}</td>
+        <td role="cell" data-label="Turma">${esc(a.turma)}</td>
+        <td role="cell" data-label="Tipo de ocorrência"><div class="tagrow">${tags(o)}</div></td>
+        <td role="cell" data-label="Data">${dt(o.dataHoraAbordagem).split(",")[0]}</td>
+        <td role="cell" class="table-actions"><button class="text-link action-icon" onclick="navigate('profile','${a.id}')" aria-label="Ver histórico de ${esc(a.nome)}">Ver histórico ${icon("arrow")}</button></td>
+      </tr>`;
     })
     .join("");
 }
 function occurrenceTable(list) {
   return list.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Tipo de ocorrência</th><th>Data</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table>`
-    : '<div class="empty">Nenhuma ocorrência neste período.</div>';
+    ? responsiveTable(
+        "Ocorrências",
+        ["Aluno", "Turma", "Tipo de ocorrência", "Data", "Ações"],
+        rows(list),
+      )
+    : emptyState("Nenhuma ocorrência neste período.");
 }
 function filteredOccurrences(day = (date) => date.slice(0, 10)) {
   return db.Ocorrencias.filter(
@@ -557,8 +664,7 @@ function home() {
           (e) =>
             `<div class="pending-item"><div>${person(student(e.alunoId))}<p>${esc(student(e.alunoId).turma)} &nbsp; · &nbsp; 3 ocorrências no ano</p></div><button class="text-link" onclick="navigate('depe','${e.id}')" aria-label="Ver encaminhamento de ${esc(student(e.alunoId).nome)}">${icon("arrow")}</button></div>`,
         )
-        .join("") ||
-      '<div class="empty">Nenhuma pendência. Tudo acompanhado.</div>'
+        .join("") || emptyState("Nenhum encaminhamento pendente.")
     }<div style="padding:12px 20px"><button class="text-link" onclick="navigate('depe')">Acessar encaminhamentos ${icon("arrow")}</button></div></section><div class="note"><strong>Uma abordagem, um registro.</strong><br>Mesmo com mais de uma irregularidade, a abordagem conta como uma única ocorrência.</div></div></div>`;
   dateEvents(home);
 }
@@ -614,15 +720,15 @@ function filterEvents(fn) {
   };
   $("#course").onchange = (e) => {
     course = e.target.value;
-    fn();
+    fn(true);
   };
   $("#classroom").onchange = (e) => {
     classroom = e.target.value;
-    fn();
+    fn(true);
   };
   $("#room")?.addEventListener("change", (e) => {
     room = e.target.value;
-    fn();
+    fn(true);
   });
 }
 function matches(a) {
@@ -640,8 +746,34 @@ function students(only = false) {
     (a) => matches(a) && (!countFilter || annual(a.id).length === +countFilter),
   );
   const body = list.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno / matrícula</th><th>Curso</th><th>Turma</th><th>Ocorrências em ${year}</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${person(a)}${a.ativo ? "" : '<span class="badge warn">Inativo</span>'}</td><td data-label="Curso">${esc(a.curso)}</td><td data-label="Turma">${esc(a.turma)}${roomFor(a) ? `<small class="class-room">${esc(roomFor(a))}</small>` : ""}</td><td data-label="Ocorrências"><span class="badge ${annual(a.id).length >= 3 ? "red" : annual(a.id).length === 2 ? "warn" : "green"}">${annual(a.id).length} de 3</span></td><td><button class="text-link" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
-    : `<div class="empty">${db.Alunos.length ? "Nenhum aluno encontrado. Tente outros filtros." : "Ainda não há alunos cadastrados."}</div>`;
+    ? responsiveTable(
+        "Alunos cadastrados",
+        [
+          "Aluno / matrícula",
+          "Curso",
+          "Turma",
+          `Ocorrências em ${year}`,
+          "Ações",
+        ],
+        list
+          .map((a) => {
+            const total = annual(a.id).length;
+            const sala = roomFor(a);
+            return `<tr role="row">
+            <td role="cell">${person(a)}${a.ativo ? "" : '<span class="badge warn">Inativo</span>'}</td>
+            <td role="cell" data-label="Curso">${esc(a.curso)}</td>
+            <td role="cell" data-label="Turma">${esc(a.turma)}${sala ? `<small class="class-room">Sala ${esc(sala)}</small>` : ""}</td>
+            <td role="cell" data-label="Ocorrências"><span class="badge ${total >= 3 ? "red" : total === 2 ? "warn" : "green"}">${total} de 3</span></td>
+            <td role="cell" class="table-actions"><button class="text-link action-icon" onclick="navigate('profile','${a.id}')">Ver histórico ${icon("arrow")}</button></td>
+          </tr>`;
+          })
+          .join(""),
+      )
+    : emptyState(
+        db.Alunos.length
+          ? "Nenhum aluno encontrado. Tente outros filtros."
+          : "Ainda não há alunos cadastrados.",
+      );
   if (only) {
     $("#student-results").innerHTML = body;
     return;
@@ -652,7 +784,7 @@ function students(only = false) {
       "Alunos",
       `Consulte cadastros e acompanhe o histórico individual em ${year}.`,
       can("createStudent")
-        ? '<button class="primary" id="add-student">+ Cadastrar aluno</button>'
+        ? `<button class="primary action-icon" id="add-student">${icon("plus")} Cadastrar aluno</button>`
         : "",
     ) +
     filters(
@@ -662,18 +794,78 @@ function students(only = false) {
   filterEvents(students);
   $("#count").onchange = (e) => {
     countFilter = e.target.value;
-    students();
+    students(true);
   };
   if ($("#add-student")) $("#add-student").onclick = () => studentModal();
 }
+function syncDialogViewport() {
+  const dialog = $("#modal");
+  if (!dialog.open) return;
+  const viewport = window.visualViewport;
+  dialog.style.setProperty(
+    "--viewport-height",
+    `${viewport?.height ?? innerHeight}px`,
+  );
+  dialog.style.setProperty("--viewport-top", `${viewport?.offsetTop ?? 0}px`);
+}
+window.visualViewport?.addEventListener("resize", syncDialogViewport);
+window.visualViewport?.addEventListener("scroll", syncDialogViewport);
+window.addEventListener("resize", syncDialogViewport);
+
 function modal(html, onSubmit) {
   const m = $("#modal");
+  const trigger = document.activeElement;
   m.innerHTML = html;
+  const title = m.querySelector("h2");
+  title.id = "dialog-title";
+  title.tabIndex = -1;
+  const header = document.createElement("div");
+  header.className = "dialog-heading";
+  header.innerHTML = `<button type="button" class="quiet dialog-close" data-close aria-label="Fechar">${icon("close")}</button>`;
+  header.prepend(title);
+  const body = document.createElement("div");
+  body.className = "dialog-content";
+  const form = m.querySelector("form");
+  const actions = (form || m).querySelector(".actions");
+  actions?.classList.add("dialog-actions");
+  actions?.remove();
+  form?.remove();
+  body.append(...m.childNodes);
+  if (form) {
+    form.classList.add("dialog-form");
+    body.append(...form.childNodes);
+    form.append(body);
+    if (actions) form.append(actions);
+    m.replaceChildren(header, form);
+    if (onSubmit) form.onsubmit = onSubmit;
+  } else {
+    m.replaceChildren(header, body);
+    if (actions) m.append(actions);
+  }
+  m.setAttribute("aria-labelledby", title.id);
+  m.onkeydown = containTab;
+  m.onclose = () => {
+    if (m.open) return;
+    const opener = trigger.isConnected
+      ? trigger
+      : document.getElementById(trigger.id);
+    if (
+      opener &&
+      opener !== document.body &&
+      opener.getClientRects().length &&
+      !opener.matches(":disabled")
+    ) {
+      opener.focus({ preventScroll: true });
+    } else {
+      focusPageHeading();
+    }
+  };
   m.showModal();
+  syncDialogViewport();
+  title.focus({ preventScroll: true });
   m.querySelectorAll("[data-close]").forEach(
     (b) => (b.onclick = () => m.close()),
   );
-  if (onSubmit) m.querySelector("form").onsubmit = onSubmit;
 }
 function catalogPage() {
   if (!can("manageCatalog")) return;
@@ -681,16 +873,19 @@ function catalogPage() {
   const rows = courses
     .map(
       (course) =>
-        `<tr><td>${esc(course.nome)}</td><td data-label="Turmas">${
+        `<tr role="row"><td role="cell" class="catalog-course">${esc(course.nome)}</td><td role="cell" data-label="Turmas e salas">${
           course.turmas.length
-            ? course.turmas
+            ? `<div class="catalog-classes">${course.turmas
                 .map(
                   (entry) =>
-                    `<div class="catalog-class"><span class="badge">${esc(entry.nome)}${entry.sala ? ` · Sala ${esc(entry.sala)}` : ""}</span><button type="button" class="text-link" data-exclude-course="${esc(course.nome)}" data-exclude-class="${esc(entry.nome)}" aria-label="Excluir turma ${esc(entry.nome)} do curso ${esc(course.nome)}">Excluir turma</button></div>`,
+                    `<div class="catalog-class">
+                      <div class="catalog-class-info"><strong>${esc(entry.nome)}</strong>${entry.sala ? `<small class="class-room">Sala ${esc(entry.sala)}</small>` : ""}</div>
+                      <button type="button" class="text-link action-icon danger" data-exclude-course="${esc(course.nome)}" data-exclude-class="${esc(entry.nome)}" aria-label="Excluir turma ${esc(entry.nome)} do curso ${esc(course.nome)}">${icon("trash")} Excluir turma</button>
+                    </div>`,
                 )
-                .join(" ")
+                .join("")}</div>`
             : "Nenhuma turma cadastrada"
-        }</td><td><button type="button" class="text-link" data-exclude-course="${esc(course.nome)}" aria-label="Excluir curso ${esc(course.nome)}">Excluir curso</button></td></tr>`,
+        }</td><td role="cell" class="table-actions"><button type="button" class="action-icon danger" data-exclude-course="${esc(course.nome)}" aria-label="Excluir curso ${esc(course.nome)}">${icon("trash")} Excluir curso</button></td></tr>`,
     )
     .join("");
   $("#content").innerHTML =
@@ -702,7 +897,7 @@ function catalogPage() {
     `<div class="grid">
       <section class="panel"><div class="panel-head"><h2>Novo curso</h2></div><div class="panel-body">
         <form id="new-course"><label class="field">Nome do curso<input name="curso" required maxlength="120"></label>
-        <div class="catalog-feedback" role="alert"></div><button class="primary">Cadastrar curso</button></form>
+        <div class="catalog-feedback" role="alert"></div><button class="primary action-icon">${icon("plus")} Cadastrar curso</button></form>
       </div></section>
       <section class="panel"><div class="panel-head"><h2>Nova turma</h2></div><div class="panel-body">
         <form id="new-class"><label class="field">Curso<select name="curso" aria-label="Curso" required>${optionList(
@@ -712,11 +907,11 @@ function catalogPage() {
         )}</select></label>
         <label class="field">Nome da turma<input name="turma" required maxlength="80"></label>
         <label class="field">Sala (opcional)<input name="sala" maxlength="80"></label>
-        <div class="catalog-feedback" role="alert"></div><button class="primary" ${courses.length ? "" : "disabled"}>Cadastrar turma</button></form>
+        <div class="catalog-feedback" role="alert"></div><button class="primary action-icon" ${courses.length ? "" : "disabled"}>${icon("plus")} Cadastrar turma</button></form>
       </div></section>
     </div>
     <section class="panel"><div class="panel-head"><h2>Cursos cadastrados</h2></div>
-    ${rows ? `<table class="responsive-table"><thead><tr><th>Curso</th><th>Turmas e salas</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Cadastre um curso para começar.</div>'}</section>`;
+    ${rows ? responsiveTable("Cursos cadastrados", ["Curso", "Turmas e salas", "Ações"], rows) : emptyState("Cadastre um curso para começar.")}</section>`;
   document.querySelectorAll("[data-exclude-course]").forEach((button) => {
     button.onclick = () =>
       excludeCatalogEntry(
@@ -759,7 +954,7 @@ function excludeCatalogEntry(curso, turma) {
   const name = turma ? `${turma} · ${curso}` : curso;
   mutationModal(
     `<h2>Excluir ${kind}</h2><p>Confirme a exclusão de <strong>${esc(name)}</strong> do catálogo.</p>
-    <form>${modalActions("Confirmar exclusão")}</form>`,
+    <form>${modalActions("Confirmar exclusão", "trash", true)}</form>`,
     () =>
       service.mutate(turma ? "excluirTurma" : "excluirCurso", {
         curso,
@@ -855,7 +1050,7 @@ function historyHTML(os, editable = false) {
     <p>${esc(o.observacao || "Sem observação.")}</p>
     <p>Registrado por ${esc(o.assistenteNome || db.Usuarios.find((u) => u.id === o.assistenteId)?.nome || "Usuário autorizado")}</p>
     ${o.editadoEm ? `<p>Última correção em ${dt(o.editadoEm)}.${o.corrigidaAposEnvio ? " Corrigida após o envio. O relatório enviado preserva a versão original." : ""}</p>` : ""}
-    ${editable ? `<button class="text-link" data-edit-occurrence="${esc(o.id)}">Editar ocorrência</button>` : ""}
+    ${editable ? `<button class="text-link action-icon" data-edit-occurrence="${esc(o.id)}">${icon("edit")} Editar ocorrência</button>` : ""}
   </article>`,
       )
       .join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"
@@ -871,8 +1066,8 @@ function referralHistory(referrals) {
     ${r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)}</p>` : ""}
     ${r.concluidoEm ? `<p>Caso encerrado em ${dt(r.concluidoEm)}</p>` : ""}
     <div class="actions">
-      <button data-referral="${esc(r.id)}">Ver encaminhamento</button>
-      <button data-document="${esc(r.id)}">Ver relatório e PDF</button>
+      <button class="action-icon" data-referral="${esc(r.id)}">${icon("arrow")} Ver encaminhamento</button>
+      <button class="action-icon" data-document="${esc(r.id)}">${icon("depe")} Ver relatório e PDF</button>
     </div>
   </article>`,
     )
@@ -895,7 +1090,7 @@ function profile() {
       "HISTÓRICO DO ALUNO",
       esc(a.nome),
       `${esc(a.matricula)} · ${esc(a.curso)} · ${esc(a.turma)}${roomFor(a) ? ` · Sala ${esc(roomFor(a))}` : ""} · ${a.ativo ? "Ativo" : "Inativo"}`,
-      `<button onclick="navigate('students')">Voltar para alunos</button>`,
+      `<button class="action-icon" onclick="navigate('students')">${icon("back")} Voltar para alunos</button>`,
     ) +
     `<div class="grid">
       <section class="panel"><div class="panel-head"><h2>Histórico de ${year}</h2><span class="badge">${os.length} registros</span></div><div class="panel-body">${historyHTML(os, can("editOccurrence"))}</div></section>
@@ -903,9 +1098,9 @@ function profile() {
         <section class="panel"><div class="panel-head"><h2>Cadastro</h2></div><div class="panel-body">
           <p>${os.length} de 3 ocorrências no ano letivo.</p>
           <div class="actions">
-            ${a.ativo && os.length < 3 && can("register") ? '<button id="register-for-student" class="primary">Registrar ocorrência</button>' : ""}
-            ${can("student") ? '<button id="edit-student">Editar cadastro</button>' : ""}
-            ${a.ativo && can("deactivateStudent") ? '<button id="deactivate-student">Desativar aluno</button>' : ""}
+            ${a.ativo && os.length < 3 && can("register") ? `<button id="register-for-student" class="primary action-icon">${icon("register")} Registrar ocorrência</button>` : ""}
+            ${can("student") ? `<button class="action-icon" id="edit-student">${icon("edit")} Editar cadastro</button>` : ""}
+            ${a.ativo && can("deactivateStudent") ? `<button class="action-icon danger" id="deactivate-student">${icon("deactivate")} Desativar aluno</button>` : ""}
           </div>
         </div></section>
         <section class="panel"><div class="panel-head"><h2>Encaminhamentos em ${year}</h2></div><div class="panel-body">${referralHistory(referrals)}</div></section>
@@ -948,14 +1143,14 @@ function mutationModal(html, mutate, message) {
     }
   });
 }
-function modalActions(label) {
-  return `<div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary">${label}</button></div>`;
+function modalActions(label, glyph, destructive = false) {
+  return `<div id="modal-error" role="alert"></div><div class="actions"><button type="button" data-close>Cancelar</button><button class="primary${glyph ? " action-icon" : ""}${destructive ? " danger" : ""}">${glyph ? icon(glyph) : ""} ${label}</button></div>`;
 }
 function deactivateStudent(a) {
   const key = uid();
   mutationModal(
     `<h2>Desativar aluno</h2><p>Confirme a desativação de <strong>${esc(a.nome)}</strong>. O histórico fica disponível para consulta.</p>
-      <form>${modalActions("Confirmar desativação")}</form>`,
+      <form>${modalActions("Confirmar desativação", "deactivate", true)}</form>`,
     () =>
       service.mutate("desativarAluno", {
         alunoId: a.id,
@@ -1009,7 +1204,7 @@ function editOccurrence(occurrence) {
   const key = uid();
   mutationModal(
     `<h2>Editar ocorrência</h2><p>Abordagem de ${dt(occurrence.dataHoraAbordagem)}</p>
-    <form>${occurrenceFields(occurrence)}${modalActions("Salvar correção")}</form>`,
+    <form>${occurrenceFields(occurrence)}${modalActions("Salvar correção", "check")}</form>`,
     () =>
       service.mutate("editarOcorrencia", {
         ...fields(),
@@ -1135,8 +1330,36 @@ function depe(only = false) {
       matches(student(e.alunoId)),
   );
   const list = rs.length
-    ? `<table class="responsive-table"><thead><tr><th>Aluno</th><th>Turma</th><th>Data</th><th>Status</th>${passwordLogin ? "<th>Leitura</th>" : ""}<th></th></tr></thead><tbody>${rs.map((e) => `<tr><td>${person(student(e.alunoId))}</td><td data-label="Turma">${esc(student(e.alunoId).turma)}</td><td data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td><td>${badge(e.status)}</td>${passwordLogin ? `<td>${e.lidoEm ? "Confirmada" : e.status === "PENDENTE" ? "—" : "Sem confirmação"}</td>` : ""}<td><button class="text-link" onclick="navigate('depe','${e.id}')">Ver detalhes ${icon("arrow")}</button></td></tr>`).join("")}</tbody></table>`
-    : '<div class="empty">Nenhum encaminhamento encontrado com estes filtros.</div>';
+    ? responsiveTable(
+        "Encaminhamentos ao DEPE",
+        [
+          "Aluno",
+          "Turma",
+          "Data",
+          "Status",
+          ...(passwordLogin ? ["Leitura"] : []),
+          "Ações",
+        ],
+        rs
+          .map((e) => {
+            const a = student(e.alunoId);
+            const readStatus = e.lidoEm
+              ? "Confirmada"
+              : e.status === "PENDENTE"
+                ? "—"
+                : "Sem confirmação";
+            return `<tr role="row">
+            <td role="cell">${person(a)}</td>
+            <td role="cell" data-label="Turma">${esc(a.turma)}</td>
+            <td role="cell" data-label="Data">${dt(passwordLogin && e.encaminhadoEm ? e.encaminhadoEm : e.criadoEm)}</td>
+            <td role="cell" data-label="Status">${badge(e.status)}</td>
+            ${passwordLogin ? `<td role="cell" data-label="Leitura">${readStatus}</td>` : ""}
+            <td role="cell" class="table-actions"><button class="text-link action-icon" onclick="navigate('depe','${e.id}')">Ver detalhes ${icon("arrow")}</button></td>
+          </tr>`;
+          })
+          .join(""),
+      )
+    : emptyState("Nenhum encaminhamento encontrado com estes filtros.");
   if (only) {
     $("#ref-results").innerHTML = list;
     return;
@@ -1148,9 +1371,11 @@ function depe(only = false) {
         ? "Fila do DEPE"
         : "Encaminhamentos ao DEPE",
       `Casos no ano letivo de ${year}.`,
-      passwordLogin ? `<button id="refresh-referrals">Atualizar</button>` : "",
+      passwordLogin
+        ? `<button class="action-icon" id="refresh-referrals">${icon("refresh")} Atualizar</button>`
+        : "",
     ) +
-    `<div class="tabs">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" data-status="${s}">${depeOnly && s === "ENCAMINHADO" ? "Abertos" : depeOnly && s === "CONCLUIDO" ? "Encerrados" : labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
+    `<div class="tabs" role="group" aria-label="Situação do encaminhamento">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" aria-pressed="${statusFilter === s}" data-status="${s}">${depeOnly && s === "ENCAMINHADO" ? "Abertos" : depeOnly && s === "CONCLUIDO" ? "Encerrados" : labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
     `<section class="panel" id="ref-results">${list}</section>${depeOnly ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEPE.</div>'}`;
   filterEvents(depe);
@@ -1160,7 +1385,7 @@ function depe(only = false) {
         await service.refresh();
         if (page === "depe") depe();
       } catch (error) {
-        toast(error.message);
+        toast(error.message, "error");
       }
     };
   document.querySelectorAll("[data-status]").forEach(
@@ -1168,6 +1393,7 @@ function depe(only = false) {
       (b.onclick = () => {
         statusFilter = b.dataset.status;
         depe();
+        $(`[data-status="${statusFilter}"]`)?.focus({ preventScroll: true });
       }),
   );
 }
@@ -1186,10 +1412,10 @@ function referralDetail() {
       "ENCAMINHAMENTO AO DEPE",
       esc(snap.aluno.nome),
       `${esc(snap.aluno.matricula)} · ${esc(snap.aluno.turma)} · Ano letivo ${r.anoLetivo}`,
-      `<button onclick="navigate('depe')">Voltar para encaminhamentos</button>`,
+      `<button class="action-icon" onclick="navigate('depe')">${icon("back")} Voltar para encaminhamentos</button>`,
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O relatório enviado preserva a versão registrada no momento do envio.</p><div class="actions" style="justify-content:stretch;flex-direction:column"><button onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button id="pdf-download">Baixar PDF</button>` : ""}${confirmReading ? '<button id="confirm-reading">Confirmar leitura</button>' : ""}
-    ${r.status === "PENDENTE" && can("send") ? '<button class="primary" id="transition">Registrar encaminhamento</button>' : r.status === "ENCAMINHADO" && can("complete") ? `<button class="primary" id="transition">${passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</button>` : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>${passwordLogin ? "Encerrado" : "Concluído"} em ${dt(r.concluidoEm)}${r.concluidoPorNome ? ` por ${esc(r.concluidoPorNome)}` : ""}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+    `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O relatório enviado preserva a versão registrada no momento do envio.</p><div class="actions referral-actions"><button class="action-icon" onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button class="action-icon" id="pdf-download">${icon("download")} Baixar PDF</button>` : ""}${confirmReading ? `<button class="action-icon" id="confirm-reading">${icon("read")} Confirmar leitura</button>` : ""}
+    ${r.status === "PENDENTE" && can("send") ? `<button class="primary action-icon" id="transition">${icon("send")} Registrar encaminhamento</button>` : r.status === "ENCAMINHADO" && can("complete") ? `<button class="primary action-icon" id="transition">${icon("finish")} ${passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</button>` : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>${passwordLogin ? "Encerrado" : "Concluído"} em ${dt(r.concluidoEm)}${r.concluidoPorNome ? ` por ${esc(r.concluidoPorNome)}` : ""}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
   if ($("#transition")) $("#transition").onclick = () => transition(r);
   $("#confirm-reading")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -1203,7 +1429,7 @@ function referralDetail() {
       render();
       toast("Leitura confirmada.");
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     } finally {
       button.disabled = false;
     }
@@ -1249,7 +1475,7 @@ async function documentView() {
   const r = db.Encaminhamentos.find((e) => e.id === selected);
   const attempt = navigation;
   if (!r) return;
-  $("#content").innerHTML = "<p>Preparando documento…</p>";
+  $("#content").innerHTML = loadingState("Preparando documento…");
   try {
     const data = live
       ? await rpc("obterDadosDocumento", { encaminhamentoId: r.id })
@@ -1260,15 +1486,16 @@ async function documentView() {
         "DOCUMENTO",
         "Encaminhamento ao DEPE",
         "A emissão não altera o status do encaminhamento.",
-        `<button onclick="navigate('depe','${r.id}')">Voltar</button>`,
+        `<button class="action-icon" onclick="navigate('depe','${r.id}')">${icon("back")} Voltar</button>`,
       ) +
-      `<div class="actions no-print" style="margin-bottom:20px">${live ? '<button id="pdf-download">Baixar PDF</button>' : ""}<button class="primary" id="print">Imprimir / Salvar como PDF</button></div>` +
+      `<div class="actions document-actions no-print">${live ? `<button class="primary action-icon" id="pdf-download">${icon("download")} Baixar PDF</button>` : ""}<button class="action-icon" id="print">${icon("print")} Imprimir / Salvar como PDF</button></div>` +
       docHTML(r, data.snapshot);
     $("#print").onclick = () => window.print();
     if ($("#pdf-download")) $("#pdf-download").onclick = () => pdf(r.id);
   } catch (e) {
     if (attempt !== navigation) return;
-    $("#content").innerHTML = `<div class="error">${esc(e.message)}</div>`;
+    $("#content").innerHTML =
+      `<div class="error" role="alert">${esc(e.message)}</div>`;
   }
 }
 async function pdf(id) {
@@ -1287,7 +1514,7 @@ async function pdf(id) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   } catch (e) {
-    toast(e.message);
+    toast(e.message, "error");
   } finally {
     b.disabled = false;
   }
@@ -1451,7 +1678,7 @@ function reports() {
       "ANÁLISE DO ANO LETIVO",
       "Relatórios",
       `Ocorrências e encaminhamentos de ${year}.`,
-      `<button id="export-report" ${exportable ? "" : "disabled"}>Baixar resumo CSV</button>`,
+      `<button class="primary action-icon" id="export-report" ${exportable ? "" : "disabled"}>${icon("download")} Baixar resumo CSV</button>`,
     ) +
     `<div class="filterbar report-filters">
       <label class="field">De<input type="date" id="from" value="${from}"></label>
@@ -1459,7 +1686,7 @@ function reports() {
       <select id="course" aria-label="Curso">${options("curso", course)}</select>
       <select id="classroom" aria-label="Turma">${options("turma", classroom)}</select>
       ${roomFilter()}
-      <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos de ocorrência</option>${availableTypes()
+      <select id="type" aria-label="Tipo de ocorrência"><option value="">Todos os tipos</option>${availableTypes()
         .map(
           (t) =>
             `<option value="${t}" ${typeFilter === t ? "selected" : ""}>${labels[t]}</option>`,

@@ -87,8 +87,8 @@ for (const width of [360, 768])
       path: `test-results/layout-${width}.png`,
       fullPage: true,
     });
-    if (width < 700)
-      await page.getByRole("button", { name: "Abrir menu" }).click();
+    const menu = page.getByRole("button", { name: "Abrir menu" });
+    if (await menu.isVisible()) await menu.click();
     await page
       .locator("nav")
       .getByRole("button", { name: "Registrar ocorrência" })

@@ -7,7 +7,7 @@ import { createServer } from "../../server/http.js";
 import { AdamService } from "../../server/service.js";
 import { MemoryRepository } from "../../server/storage.js";
 
-export async function startPortalPreview(port = 0) {
+export async function startPortalPreview(port = 0, configureData = () => {}) {
   const db = demoDatabase();
   const accounts = [
     {
@@ -32,6 +32,7 @@ export async function startPortalPreview(port = 0) {
       credentials: await passwordRecord("adamteste"),
     })),
   );
+  configureData(db);
   const repo = Object.assign(new MemoryRepository(db), { atomic: true });
   const config = {
     passwordLogin: true,
