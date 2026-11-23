@@ -626,7 +626,10 @@ function stats(items) {
 function home() {
   const os = filteredOccurrences(),
     refs = db.Encaminhamentos.filter(
-      (e) => Number(e.anoLetivo) === year && e.status === "PENDENTE",
+      (e) =>
+        Number(e.anoLetivo) === year &&
+        (e.status === "PENDENTE" ||
+          (passwordLogin && e.status === "ENCAMINHADO")),
     );
   $("#content").innerHTML =
     heading(
@@ -646,8 +649,10 @@ function home() {
       ],
       [
         refs.length,
-        "Pendentes no DEPE",
-        "Aguardando encaminhamento no ano",
+        passwordLogin ? "Casos em aberto" : "Pendentes no DEPE",
+        passwordLogin
+          ? "Pendências antigas e casos em acompanhamento"
+          : "Aguardando encaminhamento no ano",
         "arrow",
       ],
       [
@@ -657,12 +662,12 @@ function home() {
         "students",
       ],
     ]) +
-    `<div class="grid"><section class="panel"><div class="panel-head"><div><h2>Ocorrências recentes</h2><p>Últimas abordagens registradas</p></div><button class="text-link" onclick="navigate('reports')">Ver todas ${icon("arrow")}</button></div>${occurrenceTable(os.slice(0, 6))}</section><div><section class="panel"><div class="panel-head"><div><h2>Próximos encaminhamentos</h2><p>Alunos que atingiram três ocorrências</p></div><span class="badge warn">${refs.length}</span></div>${
+    `<div class="grid"><section class="panel"><div class="panel-head"><div><h2>Ocorrências recentes</h2><p>Últimas abordagens registradas</p></div><button class="text-link" onclick="navigate('reports')">Ver todas ${icon("arrow")}</button></div>${occurrenceTable(os.slice(0, 6))}</section><div><section class="panel"><div class="panel-head"><div><h2>${passwordLogin ? "Encaminhamentos em aberto" : "Próximos encaminhamentos"}</h2><p>Alunos que atingiram três ocorrências</p></div><span class="badge warn">${refs.length}</span></div>${
       refs
         .slice(0, 4)
         .map(
           (e) =>
-            `<div class="pending-item"><div>${person(student(e.alunoId))}<p>${esc(student(e.alunoId).turma)} &nbsp; · &nbsp; 3 ocorrências no ano</p></div><button class="text-link" onclick="navigate('depe','${e.id}')" aria-label="Ver encaminhamento de ${esc(student(e.alunoId).nome)}">${icon("arrow")}</button></div>`,
+            `<div class="pending-item"><div>${person(student(e.alunoId))}<p>${esc(student(e.alunoId).turma)} &nbsp; · &nbsp; ${passwordLogin ? statusLabel(e.status) : "3 ocorrências no ano"}</p></div><button class="text-link" onclick="navigate('depe','${e.id}')" aria-label="Ver encaminhamento de ${esc(student(e.alunoId).nome)}">${icon("arrow")}</button></div>`,
         )
         .join("") || emptyState("Nenhum encaminhamento pendente.")
     }<div style="padding:12px 20px"><button class="text-link" onclick="navigate('depe')">Acessar encaminhamentos ${icon("arrow")}</button></div></section><div class="note"><strong>Uma abordagem, um registro.</strong><br>Mesmo com mais de uma irregularidade, a abordagem conta como uma única ocorrência.</div></div></div>`;
@@ -1056,6 +1061,10 @@ function historyHTML(os, editable = false) {
       .join("") || "<p>Nenhuma ocorrência neste ano letivo.</p>"
   }</div>`;
 }
+function referralWaiting(referral) {
+  if (!passwordLogin || referral.status !== "ENCAMINHADO") return "";
+  return `<p>${referral.lidoEm ? "Aguardando encerramento pelo DEPE." : "Aguardando leitura do DEPE."}</p>`;
+}
 function referralHistory(referrals) {
   if (!referrals.length)
     return "<p>Nenhum encaminhamento disponível para este ano letivo.</p>";
@@ -1063,6 +1072,7 @@ function referralHistory(referrals) {
     .map(
       (r) => `<article class="student-referral">
     <div>${badge(r.status)} <time>${dt(r.encaminhadoEm || r.criadoEm)}</time></div>
+    ${referralWaiting(r)}
     ${r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)}</p>` : ""}
     ${r.concluidoEm ? `<p>Caso encerrado em ${dt(r.concluidoEm)}</p>` : ""}
     <div class="actions">
@@ -1241,7 +1251,7 @@ function register() {
   const summary = () => {
     const a = student($("#student-select").value);
     $("#student-summary").innerHTML = a
-      ? `<div class="note">${esc(a.curso)} · ${esc(a.turma)}<br><strong>${annual(a.id).length} de 3 ocorrências em ${year}</strong>${annual(a.id).length === 2 ? "<p>Este registro atingirá o limite de três ocorrências e incluirá o aluno na lista de encaminhamentos ao DEPE.</p>" : annual(a.id).length >= 3 ? "<p>Limite atingido. Novos registros dependem de definição institucional.</p>" : ""}</div>`
+      ? `<div class="note">${esc(a.curso)} · ${esc(a.turma)}<br><strong>${annual(a.id).length} de 3 ocorrências em ${year}</strong>${annual(a.id).length === 2 ? (passwordLogin ? "<p>A terceira ocorrência envia o caso automaticamente ao DEPE.</p>" : "<p>Este registro atingirá o limite de três ocorrências e incluirá o aluno na lista de encaminhamentos ao DEPE.</p>") : annual(a.id).length >= 3 ? "<p>Limite atingido. Novos registros dependem de definição institucional.</p>" : ""}</div>`
       : "";
   };
   summary();
@@ -1288,7 +1298,7 @@ function register() {
     }
     pendingKey = p.chaveIdempotencia;
     modal(
-      `<h2>Conferir e confirmar</h2><p><strong>${esc(student(p.alunoId).nome)}</strong> · ${year}</p><p>${occurrenceDescription(p.irregularidades, p.tituloPersonalizado, " e ")}</p><p>${esc(p.observacao || "Sem observação.")}</p><div class="note">Este registro conta como uma abordagem.${annual(p.alunoId).length === 2 ? " Será criada uma pendência de encaminhamento ao DEPE." : ""}</div><div id="confirm-error" role="alert"></div><div class="actions"><button data-close>Voltar</button><button class="primary" id="confirm-register">Confirmar registro</button></div>`,
+      `<h2>Conferir e confirmar</h2><p><strong>${esc(student(p.alunoId).nome)}</strong> · ${year}</p><p>${occurrenceDescription(p.irregularidades, p.tituloPersonalizado, " e ")}</p><p>${esc(p.observacao || "Sem observação.")}</p><div class="note">Este registro conta como uma abordagem.${annual(p.alunoId).length === 2 ? (passwordLogin ? " O caso será encaminhado automaticamente ao DEPE." : " Será criada uma pendência de encaminhamento ao DEPE.") : ""}</div><div id="confirm-error" role="alert"></div><div class="actions"><button data-close>Voltar</button><button class="primary" id="confirm-register">Confirmar registro</button></div>`,
     );
     $("#confirm-register").onclick = async () => {
       const b = $("#confirm-register");
@@ -1306,7 +1316,7 @@ function register() {
             "Abordagem registrada.",
             "O histórico do aluno foi atualizado.",
           ) +
-          `<div class="panel form-card"><div class="panel-body"><div class="success">✓ ${esc(student(p.alunoId).nome)} · ${result.contagem} de 3 ocorrências em ${year}.</div>${result.encaminhamento ? "<p>Uma pendência foi criada no DEPE. O documento ainda não foi encaminhado.</p>" : ""}<div class="actions"><button onclick="navigate('profile','${p.alunoId}')">Ver histórico</button>${result.encaminhamento ? `<button onclick="navigate('depe','${result.encaminhamento.id}')">Ver encaminhamento ao DEPE</button>` : ""}<button class="primary" onclick="navigate('register')">Registrar outra ocorrência</button></div></div></div>`;
+          `<div class="panel form-card"><div class="panel-body"><div class="success">✓ ${esc(student(p.alunoId).nome)} · ${result.contagem} de 3 ocorrências em ${year}.</div>${result.encaminhamento?.status === "ENCAMINHADO" ? "<p>Encaminhado automaticamente ao DEPE. Acompanhe a leitura e o encerramento no histórico.</p>" : result.encaminhamento?.status === "PENDENTE" ? "<p>Uma pendência foi criada. O documento ainda não foi encaminhado.</p>" : ""}<div class="actions"><button onclick="navigate('profile','${p.alunoId}')">Ver histórico</button>${result.encaminhamento ? `<button onclick="navigate('depe','${result.encaminhamento.id}')">Ver encaminhamento ao DEPE</button>` : ""}<button class="primary" onclick="navigate('register')">Registrar outra ocorrência</button></div></div></div>`;
       } catch (err) {
         $("#confirm-error").innerHTML =
           `<div class="error">${esc(err.message)}</div>`;
@@ -1377,7 +1387,7 @@ function depe(only = false) {
     ) +
     `<div class="tabs" role="group" aria-label="Situação do encaminhamento">${(depeOnly ? ["ENCAMINHADO", "CONCLUIDO", ""] : ["PENDENTE", "ENCAMINHADO", "CONCLUIDO", ""]).map((s) => `<button class="${statusFilter === s ? "active" : ""}" aria-pressed="${statusFilter === s}" data-status="${s}">${depeOnly && s === "ENCAMINHADO" ? "Abertos" : depeOnly && s === "CONCLUIDO" ? "Encerrados" : labels[s] || "Todos"} <span class="badge">${db.Encaminhamentos.filter((e) => +e.anoLetivo === year && (!s || e.status === s)).length}</span></button>`).join("")}</div>` +
     filters() +
-    `<section class="panel" id="ref-results">${list}</section>${depeOnly ? "" : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEPE.</div>'}`;
+    `<section class="panel" id="ref-results">${list}</section>${depeOnly ? "" : passwordLogin ? '<div class="note">A terceira ocorrência encaminha o caso automaticamente ao DEPE. Casos pendentes criados antes da atualização podem ser enviados pelos detalhes.</div>' : '<div class="note">Emitir um documento não altera o status. Registre o encaminhamento após realizar o envio ao DEPE.</div>'}`;
   filterEvents(depe);
   if ($("#refresh-referrals"))
     $("#refresh-referrals").onclick = async () => {
@@ -1415,7 +1425,7 @@ function referralDetail() {
       `<button class="action-icon" onclick="navigate('depe')">${icon("back")} Voltar para encaminhamentos</button>`,
     ) +
     `<div class="grid"><section class="panel"><div class="panel-head"><h2>Três abordagens vinculadas</h2>${badge(r.status)}</div><div class="panel-body">${historyHTML(snap.ocorrencias)}</div></section><div><section class="panel"><div class="panel-body"><h2>Documento e acompanhamento</h2><p>O relatório enviado preserva a versão registrada no momento do envio.</p><div class="actions referral-actions"><button class="action-icon" onclick="navigate('document','${r.id}')">${icon("depe")} Visualizar documento</button>${live ? `<button class="action-icon" id="pdf-download">${icon("download")} Baixar PDF</button>` : ""}${confirmReading ? `<button class="action-icon" id="confirm-reading">${icon("read")} Confirmar leitura</button>` : ""}
-    ${r.status === "PENDENTE" && can("send") ? `<button class="primary action-icon" id="transition">${icon("send")} Registrar encaminhamento</button>` : r.status === "ENCAMINHADO" && can("complete") ? `<button class="primary action-icon" id="transition">${icon("finish")} ${passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</button>` : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>${passwordLogin ? "Encerrado" : "Concluído"} em ${dt(r.concluidoEm)}${r.concluidoPorNome ? ` por ${esc(r.concluidoPorNome)}` : ""}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
+    ${r.status === "PENDENTE" && can("send") ? `<button class="primary action-icon" id="transition">${icon("send")} Registrar encaminhamento</button>` : r.status === "ENCAMINHADO" && can("complete") ? `<button class="primary action-icon" id="transition">${icon("finish")} ${passwordLogin ? "Encerrar caso" : "Concluir atendimento"}</button>` : ""}</div>${r.encaminhadoEm ? `<p>Encaminhado${r.encaminhamentoAutomatico ? " automaticamente" : ""} em ${dt(r.encaminhadoEm)}<br>${esc(r.observacaoEncaminhamento)}</p>` : ""}${referralWaiting(r)}${passwordLogin && r.lidoEm ? `<p>Leitura confirmada em ${dt(r.lidoEm)} por ${esc(r.lidoPorNome)}</p>` : ""}${r.concluidoEm ? `<p>${passwordLogin ? "Encerrado" : "Concluído"} em ${dt(r.concluidoEm)}${r.concluidoPorNome ? ` por ${esc(r.concluidoPorNome)}` : ""}<br>${esc(r.observacaoConclusao)}</p>` : ""}</div></section><div class="note">A conclusão mantém as três ocorrências no histórico do ano letivo.</div></div></div>`;
   if ($("#transition")) $("#transition").onclick = () => transition(r);
   $("#confirm-reading")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -1792,7 +1802,7 @@ function reports() {
 function settings() {
   $("#content").innerHTML =
     heading("INFORMAÇÕES", "Sobre o ADAM", "Ocorrências Estudantis · IFAM") +
-    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : passwordLogin ? "Registros armazenados no PostgreSQL do Supabase. Permissões verificadas pelo servidor." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${IFAM.CAMPUS_NAME}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. A terceira ocorrência do ano cria uma pendência no DEPE. Emitir o documento não encaminha automaticamente. Concluir atendimento mantém o histórico.</p><p>A política para registros após três ocorrências depende de definição institucional.</p></div></section>`;
+    `<section class="panel"><div class="panel-body"><h2>${demoMode ? "Demonstração interativa" : "Ambiente institucional"}</h2><p>${demoMode ? "Somente dados fictícios, compartilhados em memória no servidor e reiniciados quando ele é encerrado." : passwordLogin ? "Registros armazenados no PostgreSQL do Supabase. Permissões verificadas pelo servidor." : "Registros armazenados no Google Sheets. Identidade e permissões verificadas pelo servidor."}</p><h3>Configuração institucional</h3><p>Campus: ${IFAM.CAMPUS_NAME}<br>Ano ativo: ${config.anoLetivoAtivo}<br>Fuso: ${esc(config.fusoHorario)}</p><h3>Regras do acompanhamento</h3><p>Cada abordagem conta uma vez. ${passwordLogin ? "A terceira ocorrência do ano encaminha o caso automaticamente ao DEPE." : "A terceira ocorrência do ano cria uma pendência no DEPE. Emitir o documento não encaminha automaticamente."} Concluir atendimento mantém o histórico.</p><p>A política para registros após três ocorrências depende de definição institucional.</p></div></section>`;
 }
 window.addEventListener("beforeunload", (e) => {
   if (dirty) {

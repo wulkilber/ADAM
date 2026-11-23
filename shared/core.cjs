@@ -318,6 +318,7 @@
             e.alunoId === student.id && Number(e.anoLetivo) === p.anoLetivo,
         ) || null;
       if (previous.length === 2 && !referral) {
+        const automatic = env.rights === PORTAL_RIGHTS;
         const items = [...previous, occurrence].map((o) => ({
           ...o,
           assistenteNome: (
@@ -331,10 +332,11 @@
           alunoId: student.id,
           anoLetivo: p.anoLetivo,
           ocorrenciaIdsJson: JSON.stringify(items.map((o) => o.id)),
-          status: "PENDENTE",
+          status: automatic ? "ENCAMINHADO" : "PENDENTE",
           criadoEm: now,
-          encaminhadoEm: "",
-          encaminhadoPor: "",
+          encaminhadoEm: automatic ? now : "",
+          encaminhadoPor: automatic ? user.id : "",
+          ...(automatic && { encaminhamentoAutomatico: true }),
           concluidoEm: "",
           concluidoPor: "",
           observacaoEncaminhamento: "",
@@ -345,6 +347,8 @@
         };
         writes.push({ table: "Encaminhamentos", row: referral });
         audit("criarEncaminhamento", "Encaminhamentos", referral.id);
+        if (automatic)
+          audit("encaminharAutomaticamente", "Encaminhamentos", referral.id);
       }
       data = {
         ocorrencia: occurrence,

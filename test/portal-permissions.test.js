@@ -8,13 +8,23 @@ import { AdamService } from "../server/service.js";
 import { MemoryRepository } from "../server/storage.js";
 import { demoDatabase } from "../server/demo.js";
 
-test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhamento pelo assistente", async (t) => {
+test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhamento automático", async (t) => {
   const db = demoDatabase();
   const historic = db.Encaminhamentos[0];
   Object.assign(historic, {
     status: "CONCLUIDO",
     lidoEm: "2026-10-12T10:00:00Z",
     concluidoEm: "2026-10-13T10:00:00Z",
+  });
+  const previousPending = db.Encaminhamentos.find(
+    (r) => r !== historic && r.status === "CONCLUIDO",
+  );
+  Object.assign(previousPending, {
+    status: "PENDENTE",
+    encaminhadoEm: "",
+    encaminhadoPor: "",
+    concluidoEm: "",
+    concluidoPor: "",
   });
   db.Usuarios = [
     {
@@ -309,75 +319,11 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     normal.push(occurrence.ocorrencia);
   }
   assert.equal(occurrence.contagem, 2);
-  occurrence = await api(assist, "registrarOcorrencia", {
-    ...custom,
-    tituloPersonalizado: "  Uso de material do laboratório  ",
-  });
-  assert.equal(occurrence.contagem, 3);
+  assert.equal(occurrence.encaminhamento, null);
+  const casesBefore = await api(depe, "carregarDados");
   assert.equal(
-    occurrence.ocorrencia.tituloPersonalizado,
-    "Uso de material do laboratório",
-  );
-  assert.equal(
-    (
-      await api(assist, "registrarOcorrencia", {
-        ...custom,
-        tituloPersonalizado: "Uso de material do laboratório",
-      })
-    ).ocorrencia.id,
-    occurrence.ocorrencia.id,
-  );
-  const id = occurrence.encaminhamento.id;
-  const pending = await api(depe, "carregarDados");
-  assert.equal(
-    pending.Alunos.some((a) => a.id === enrolled.id),
-    true,
-  );
-  assert.equal(
-    pending.Ocorrencias.filter((o) => o.alunoId === enrolled.id).length,
-    3,
-  );
-  assert.equal(
-    pending.Usuarios.every((u) => !u.credentials),
-    true,
-  );
-  assert.equal(
-    pending.PendenciasPorRecorte.find((entry) => entry.curso === student.curso)
-      .total,
-    1,
-  );
-  assert.equal(
-    pending.PendenciasPorRecorte.some(
-      (entry) => "id" in entry || "alunoId" in entry,
-    ),
+    casesBefore.Encaminhamentos.some((r) => r.alunoId === enrolled.id),
     false,
-  );
-  assert.equal(
-    pending.Encaminhamentos.some((r) => r.id === id),
-    false,
-  );
-  const preserved = pending.Encaminhamentos.find((r) => r.id === historic.id);
-  assert.equal(preserved.status, "CONCLUIDO");
-  assert.equal(preserved.lidoEm, historic.lidoEm);
-  assert.equal(preserved.concluidoEm, historic.concluidoEm);
-  for (const action of [
-    "obterEncaminhamento",
-    "obterDadosDocumento",
-    "gerarPdfEncaminhamento",
-  ])
-    await api(depe, action, { encaminhamentoId: id }, 404);
-
-  await api(
-    depe,
-    "confirmarLeituraDepe",
-    { id, chaveIdempotencia: "ler-pendente" },
-    404,
-  );
-  await api(
-    depe,
-    "concluirEncaminhamento",
-    { id, versaoEsperada: 1, chaveIdempotencia: "encerrar-pendente" },
-    404,
   );
   const corrected = await api(assist, "editarOcorrencia", {
     id: normal[0].id,
@@ -401,21 +347,90 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
     },
     409,
   );
+
+  occurrence = await api(assist, "registrarOcorrencia", {
+    ...custom,
+    tituloPersonalizado: "  Uso de material do laboratório  ",
+  });
+  assert.equal(occurrence.contagem, 3);
+  assert.equal(
+    occurrence.ocorrencia.tituloPersonalizado,
+    "Uso de material do laboratório",
+  );
+  assert.equal(
+    (
+      await api(assist, "registrarOcorrencia", {
+        ...custom,
+        tituloPersonalizado: "Uso de material do laboratório",
+      })
+    ).ocorrencia.id,
+    occurrence.ocorrencia.id,
+  );
+  const id = occurrence.encaminhamento.id;
+  assert.equal(occurrence.encaminhamento.status, "ENCAMINHADO");
+  assert.equal(
+    occurrence.encaminhamento.encaminhadoEm,
+    occurrence.ocorrencia.registradoEm,
+  );
+  assert.equal(occurrence.encaminhamento.encaminhamentoAutomatico, true);
+  const pending = await api(depe, "carregarDados");
+  assert.equal(
+    pending.Alunos.some((a) => a.id === enrolled.id),
+    true,
+  );
+  assert.equal(
+    pending.Ocorrencias.filter((o) => o.alunoId === enrolled.id).length,
+    3,
+  );
+  assert.equal(
+    pending.Usuarios.every((u) => !u.credentials),
+    true,
+  );
+  assert.equal(
+    pending.PendenciasPorRecorte.some((entry) => entry.curso === student.curso),
+    false,
+  );
+  assert.equal(
+    pending.PendenciasPorRecorte.some(
+      (entry) => "id" in entry || "alunoId" in entry,
+    ),
+    false,
+  );
+  assert.equal(pending.Encaminhamentos.filter((r) => r.id === id).length, 1);
+  const preserved = pending.Encaminhamentos.find((r) => r.id === historic.id);
+  assert.equal(preserved.status, "CONCLUIDO");
+  assert.equal(preserved.lidoEm, historic.lidoEm);
+  assert.equal(preserved.concluidoEm, historic.concluidoEm);
+  for (const action of [
+    "obterEncaminhamento",
+    "obterDadosDocumento",
+    "gerarPdfEncaminhamento",
+  ])
+    await api(depe, action, { encaminhamentoId: previousPending.id }, 404);
+
+  await api(
+    depe,
+    "confirmarLeituraDepe",
+    { id: previousPending.id, chaveIdempotencia: "ler-pendente" },
+    404,
+  );
+  await api(
+    depe,
+    "concluirEncaminhamento",
+    {
+      id: previousPending.id,
+      versaoEsperada: 1,
+      chaveIdempotencia: "encerrar-pendente",
+    },
+    404,
+  );
   await api(
     assist,
     "registrarEncaminhamento",
-    {
-      id,
-      versaoEsperada: 1,
-      chaveIdempotencia: "enviar-obsoleto",
-    },
-    409,
+    { id, versaoEsperada: 1, chaveIdempotencia: "envio-desnecessario" },
+    400,
   );
-  const sent = await api(assist, "registrarEncaminhamento", {
-    id,
-    versaoEsperada: 2,
-    chaveIdempotencia: "enviar",
-  });
+  const sent = occurrence.encaminhamento;
   const doc = await api(depe, "obterDadosDocumento", { encaminhamentoId: id });
   assert.equal(doc.snapshot.aluno.id, enrolled.id);
   assert.equal(doc.snapshot.ocorrencias[0].irregularidadesJson, '["ATRASO"]');
@@ -571,7 +586,11 @@ test("Portal PostgreSQL: criação de contas, cadastro pelo DEPE e encaminhament
   );
 
   const { db: record } = await repo.read();
-  for (const action of ["confirmarLeituraDepe", "concluirEncaminhamento"])
+  for (const action of [
+    "confirmarLeituraDepe",
+    "concluirEncaminhamento",
+    "encaminharAutomaticamente",
+  ])
     assert.equal(
       record.Auditoria.filter(
         (entry) => entry.acao === action && entry.entidadeId === id,

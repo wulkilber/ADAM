@@ -127,15 +127,24 @@ test("DEPE gerencia alunos e casos e o assistente edita o histórico", async ({
       .fill("Título original fictício");
     await assist.getByRole("button", { name: "Revisar registro" }).click();
     await assist.getByRole("button", { name: "Confirmar registro" }).click();
+    await expect(
+      assist
+        .locator("#content")
+        .getByText("Encaminhado automaticamente ao DEPE.", {
+          exact: false,
+        }),
+    ).toBeVisible();
+
     await assist
       .getByRole("button", { name: "Ver encaminhamento ao DEPE" })
       .click();
-    await assist
-      .getByRole("button", { name: "Registrar encaminhamento", exact: true })
-      .click();
-    await assist
-      .getByRole("button", { name: "Confirmar encaminhamento" })
-      .click();
+    await expect(
+      assist.getByRole("button", {
+        name: "Registrar encaminhamento",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(assist.getByText("Aguardando leitura do DEPE.")).toBeVisible();
     await expect(assist.locator(".panel-head .badge")).toContainText(
       "Encaminhado",
     );

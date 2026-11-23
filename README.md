@@ -53,8 +53,8 @@ Não envie `.env`, chaves JSON, tokens, backups ou dados reais ao GitHub. O repo
 - Login com usuário e senha e permissões de Administrador, Assistente de Alunos e DEPE verificadas no servidor. A integração legada com planilhas mantém seu fluxo de login Google.
 - Menu Alunos do DEPE com cadastro, edição, desativação e histórico anual. A desativação preserva os registros e impede novas ocorrências.
 - Uma abordagem conta uma vez, mesmo com vários tipos predefinidos. Na versão PostgreSQL, o assistente também pode registrar um tipo personalizado com título próprio.
-- Terceira ocorrência cria um único encaminhamento PENDENTE com snapshot e três IDs.
-- Envio pelo assistente, confirmação de leitura e encerramento pelo DEPE. Leitura e encerramento são independentes. Casos encerrados seguem disponíveis no histórico e na fila de encerrados.
+- A terceira ocorrência envia automaticamente um único caso ao DEPE, com o histórico das três ocorrências. Pendências anteriores continuam acessíveis para envio.
+- O DEPE confirma a leitura e encerra os casos. Leitura e encerramento são independentes. Casos encerrados seguem disponíveis no histórico e na fila de encerrados.
 - Documento imprimível e PDF A4 gerado pelo servidor, sem arquivos temporários no Google Drive.
 - Relatórios, interface responsiva e modo demonstrativo explícito.
 - Validação no servidor, versões, idempotência, auditoria, fila de gravação e recuperação após resposta perdida.

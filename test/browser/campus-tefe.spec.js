@@ -85,6 +85,12 @@ test("Campus Tefé: tema nos três perfis e ocorrência personalizada até o DEP
     await page.getByRole("button", { name: "Revisar registro" }).click();
     await expect(page.getByRole("dialog")).toContainText(label);
     await page.getByRole("button", { name: "Confirmar registro" }).click();
+    await expect(
+      page
+        .locator("#content")
+        .getByText("Encaminhado automaticamente ao DEPE.", { exact: false }),
+    ).toBeVisible();
+
     await page.getByRole("button", { name: "Ver histórico" }).click();
     await expect(page.locator(".timeline")).toContainText(
       "Personalizada: " + label,
@@ -111,12 +117,13 @@ test("Campus Tefé: tema nos três perfis e ocorrência personalizada até o DEP
       .getByRole("button", { name: "Ver detalhes" })
       .click();
     await expect(page.locator(".timeline")).toContainText(label);
-    await page
-      .getByRole("button", { name: "Registrar encaminhamento", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Confirmar encaminhamento" })
-      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Registrar encaminhamento",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Aguardando leitura do DEPE.")).toBeVisible();
     await expect(page.locator(".panel-head .badge")).toContainText(
       "Encaminhado",
     );
